@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
       const mentorAddress = (form.get("mentorAddress") as string) || ""
       const linkedCourse = (form.get("linkedCourse") as string) || undefined
   const txHash = (form.get("txHash") as string) || null
+  const feeTxHash = (form.get("feeTxHash") as string) || null
   const funded = (form.get("funded") as string) === "true" || false
       const requirementsRaw = (form.get("requirements") as string) || ""
 
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
         requirements: requirementsRaw.split("\n").filter((r) => r.trim()),
         files,
         txHash,
+        feeTxHash,
         funded,
       }
     } else {

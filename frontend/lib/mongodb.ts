@@ -382,6 +382,7 @@ export async function saveBountyToMongo(bountyData: {
       // mark whether the bounty prizePool has been funded on-chain
       funded: !!(bountyData as any).funded || false,
       txHash: (bountyData as any).txHash || null,
+      feeTxHash: (bountyData as any).feeTxHash || null,
     }
 
     const result = await collection.insertOne(bountyWithCode)

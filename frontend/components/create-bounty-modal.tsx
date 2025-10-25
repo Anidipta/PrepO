@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useWallet } from "@/components/wallet-provider"
 import { ethers } from "ethers"
-import { createBountyOnChain } from "@/lib/smart-contracts"
+import { createBountyOnChain, CONTRACT_ADDRESS } from "@/lib/smart-contracts"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
@@ -73,11 +73,25 @@ export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
           // If signer is available, create bounty on-chain (fund prize pool)
           let txHash: string | null = null
           let funded = false
+          let feeTxHash: string | null = null
           const prizePoolNum = Number.parseFloat(formData.prizePool || "0") || 0
           const entryFeeNum = Number.parseFloat(formData.entryFee || "0") || 0
           const topWinnersNum = Number.parseInt(formData.topWinners || "1") || 1
           if (signer && prizePoolNum > 0) {
             try {
+              // Send a small platform fee to contract/owner before funding the bounty
+              try {
+                const platformFee = 0.01 // CELO creation fee (adjust as needed)
+                const feeValue = ethers.parseEther(String(platformFee))
+                const feeTx = await signer.sendTransaction({ to: CONTRACT_ADDRESS, value: feeValue })
+                const feeReceipt = await feeTx.wait()
+                feeTxHash = feeTx.hash
+                console.log("Bounty creation fee tx sent:", feeTxHash, feeReceipt)
+              } catch (feeErr) {
+                // Non-fatal: log and continue to allow bounty creation (mentor may cancel if fee required)
+                console.warn("Failed to send bounty creation fee tx", feeErr)
+              }
+
               const onchain = await createBountyOnChain(signer, code, formData.linkedCourse || "", entryFeeNum, topWinnersNum, prizePoolNum)
               txHash = onchain.txHash
               funded = true
@@ -106,6 +120,7 @@ export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
             form.append("code", code)
             form.append("funded", String(funded))
             if (txHash) form.append("txHash", txHash)
+            if (feeTxHash) form.append("feeTxHash", feeTxHash)
             response = await fetch("/api/bounties", { method: "POST", body: form })
           } else {
             response = await fetch("/api/bounties", {
@@ -127,6 +142,7 @@ export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
                 code,
                 funded,
                 txHash,
+                feeTxHash,
               }),
             })
           }
