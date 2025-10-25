@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
+import { useWallet } from "@/components/wallet-provider"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -21,6 +22,8 @@ export default function CreateCourseModal({ onClose }: CreateCourseModalProps) {
     duration: "GO",
     fee: "",
   })
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const wallet = useWallet()
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -31,7 +34,47 @@ export default function CreateCourseModal({ onClose }: CreateCourseModalProps) {
     if (stage === "details") {
       setStage("content")
     } else if (stage === "content") {
-      setStage("confirmation")
+      // submit course with optional file; charge mentor fee of 0.001 CELO (mocked via WalletProvider)
+      ;(async () => {
+        try {
+          const form = new FormData()
+          form.append("title", formData.name)
+          form.append("description", formData.description)
+          form.append("category", formData.category)
+          form.append("level", formData.level)
+          form.append("duration", formData.duration)
+          form.append("fee", formData.fee)
+
+          const mentorAddress = wallet?.address || (typeof window !== "undefined" ? localStorage.getItem("walletAddress") || "" : "")
+          form.append("mentorAddress", mentorAddress)
+
+          // charge mentor fee (0.001 CELO) via mock wallet provider if available
+          const mentorFee = 0.001
+          if (wallet && typeof (wallet as any).subtractCELO === "function") {
+            if ((wallet.balance || 0) < mentorFee) {
+              alert("Insufficient CELO balance to create course (requires 0.001 CELO)")
+              return
+            }
+            // deduct locally (this simulates the fee collection)
+            ;(wallet as any).subtractCELO(mentorFee)
+            form.append("mentorFeePaid", String(mentorFee))
+          } else {
+            // still append the field so server can record it if provided
+            form.append("mentorFeePaid", String(mentorFee))
+          }
+
+          if (selectedFile) form.append("file", selectedFile)
+
+          const res = await fetch("/api/courses", { method: "POST", body: form })
+          if (!res.ok) throw new Error("Failed to create course")
+          const json = await res.json()
+          console.log("Course created:", json)
+          setStage("confirmation")
+        } catch (e) {
+          console.error("Error creating course", e)
+          alert("Failed to create course")
+        }
+      })()
     }
   }
 
@@ -162,15 +205,15 @@ export default function CreateCourseModal({ onClose }: CreateCourseModalProps) {
         {stage === "content" && (
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-foreground">Course Content</h3>
-
             <div>
               <label className="text-sm font-semibold text-foreground block mb-2">Upload Course PDF *</label>
-              <div className="border-2 border-dashed border-primary/30 rounded-lg p-12 text-center hover:border-primary/50 transition-colors cursor-pointer">
-                <div className="text-5xl mb-4">📄</div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">Click to upload PDF</h3>
-                <p className="text-sm text-muted-foreground">
-                  AI will analyze your content and generate quiz questions automatically
-                </p>
+              <div className="border-2 border-dashed border-primary/30 rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer">
+                <input id="course-file" type="file" accept=".pdf" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+                <label htmlFor="course-file" className="cursor-pointer block">
+                  <div className="text-5xl mb-4">📄</div>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Click to upload PDF</h3>
+                  <p className="text-sm text-muted-foreground">{selectedFile ? `Selected: ${selectedFile.name}` : "AI will analyze your content and generate quiz questions automatically"}</p>
+                </label>
               </div>
             </div>
 

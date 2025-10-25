@@ -1,8 +1,10 @@
 "use client"
 
+import type React from "react"
+
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 interface QuizInterfaceProps {
@@ -10,215 +12,230 @@ interface QuizInterfaceProps {
 }
 
 export default function QuizInterface({ onClose }: QuizInterfaceProps) {
-  const [stage, setStage] = useState<"upload" | "generating" | "quiz" | "results">("upload")
-  const [currentQuestion, setCurrentQuestion] = useState(0)
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({})
-  const [score, setScore] = useState(0)
+  const [stage, setStage] = useState<"upload" | "preview" | "confirmation">("upload")
+  const [fileName, setFileName] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [analysis, setAnalysis] = useState<{ summary?: string; bullets?: string[]; quiz?: any } | null>(null)
 
-  const questions = [
-    {
-      question: "What is the primary purpose of smart contracts?",
-      options: [
-        "To store cryptocurrency",
-        "To automate and enforce agreements on the blockchain",
-        "To replace traditional banks",
-        "To increase transaction fees",
-      ],
-      correct: 1,
-    },
-    {
-      question: "Which blockchain is CELO built on?",
-      options: ["Ethereum", "Bitcoin", "Proof of Stake consensus", "Its own independent blockchain"],
-      correct: 3,
-    },
-    {
-      question: "What does DeFi stand for?",
-      options: [
-        "Decentralized Finance",
-        "Digital Financial Infrastructure",
-        "Distributed Financial Index",
-        "Decentralized Funding Initiative",
-      ],
-      correct: 0,
-    },
-  ]
-
-  const handleAnswerSelect = (optionIndex: number) => {
-    setSelectedAnswers({ ...selectedAnswers, [currentQuestion]: optionIndex })
-  }
-
-  const handleNext = () => {
-    if (currentQuestion < questions.length - 1) {
-      setCurrentQuestion(currentQuestion + 1)
-    } else {
-      // Calculate score
-      let correctCount = 0
-      questions.forEach((q, idx) => {
-        if (selectedAnswers[idx] === q.correct) {
-          correctCount++
-        }
-      })
-      setScore((correctCount / questions.length) * 100)
-      setStage("results")
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setFileName(file.name)
+      // store file in state for upload
+      ;(window as any)._queuedQuizFile = file
     }
   }
 
-  const handleFileUpload = () => {
-    setStage("generating")
-    setTimeout(() => {
-      setStage("quiz")
-    }, 2000)
+  const handleGenerateQuiz = async () => {
+    if (!fileName) return
+
+    setLoading(true)
+    try {
+      const file = (window as any)._queuedQuizFile as File | undefined
+      if (!file) throw new Error("No file queued")
+
+      const form = new FormData()
+      form.append("file", file)
+      // include address if available
+      const savedAddress = localStorage.getItem("walletAddress") || ""
+      form.append("address", savedAddress)
+
+      const res = await fetch(`/api/ai/process-pdf`, {
+        method: "POST",
+        body: form,
+      })
+
+      const json = await res.json()
+      if (!res.ok) {
+        console.error("AI process failed:", json)
+        throw new Error(json.error || "AI failed")
+      }
+
+      setAnalysis(json.data || null)
+      setStage("preview")
+    } catch (error) {
+      console.error("[v1] Error generating quiz:", error)
+      alert("Failed to generate quiz - ensure AI_API_URL and AI_API_KEY are configured on the server.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePublish = async () => {
+    setLoading(true)
+    try {
+      // Simulate publishing
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      setStage("confirmation")
+    } catch (error) {
+      console.error("[v0] Error publishing quiz:", error)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="glass-effect border-primary/30 max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Upload PDF & Generate Quiz</DialogTitle>
+        </DialogHeader>
+
         {stage === "upload" && (
-          <>
-            <DialogHeader>
-              <DialogTitle>Upload PDF → Generate Quiz</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-6">
+          <div className="space-y-6">
+            <div>
+              <label className="text-sm font-semibold text-foreground block mb-4">Upload Course PDF</label>
               <div className="border-2 border-dashed border-primary/30 rounded-lg p-12 text-center hover:border-primary/50 transition-colors cursor-pointer">
-                <div className="text-5xl mb-4">📄</div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">Click to upload PDF</h3>
-                <p className="text-sm text-muted-foreground">
-                  AI will analyze your content and generate quiz questions
-                </p>
+                <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" id="pdf-upload" />
+                <label htmlFor="pdf-upload" className="cursor-pointer block">
+                  <div className="text-5xl mb-4">📄</div>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Click to upload PDF</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {fileName
+                      ? `Selected: ${fileName}`
+                      : "AI will analyze your content and generate quiz questions automatically"}
+                  </p>
+                </label>
               </div>
-              <Button
-                onClick={handleFileUpload}
-                className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
-              >
-                Upload & Generate Quiz
-              </Button>
             </div>
-          </>
-        )}
 
-        {stage === "generating" && (
-          <>
-            <DialogHeader>
-              <DialogTitle>Generating Quiz...</DialogTitle>
-            </DialogHeader>
-            <div className="flex flex-col items-center justify-center py-12">
-              <div className="w-16 h-16 rounded-full border-4 border-primary/30 border-t-primary animate-spin mb-6"></div>
-              <p className="text-lg text-muted-foreground">AI is analyzing your PDF and creating questions...</p>
-              <p className="text-sm text-muted-foreground mt-2">This usually takes 30-60 seconds</p>
-            </div>
-          </>
-        )}
-
-        {stage === "quiz" && (
-          <>
-            <DialogHeader>
-              <DialogTitle>
-                Quiz Question {currentQuestion + 1} of {questions.length}
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-6">
-              {/* Progress Bar */}
-              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-300"
-                  style={{ width: `${((currentQuestion + 1) / questions.length) * 100}%` }}
-                ></div>
-              </div>
-
-              {/* Question */}
-              <div>
-                <h3 className="text-xl font-semibold text-foreground mb-6">{questions[currentQuestion].question}</h3>
-
-                {/* Options */}
-                <div className="space-y-3">
-                  {questions[currentQuestion].options.map((option, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleAnswerSelect(idx)}
-                      className={`w-full p-4 rounded-lg border-2 transition-all text-left font-medium ${
-                        selectedAnswers[currentQuestion] === idx
-                          ? "border-primary bg-primary/10 text-foreground"
-                          : "border-border/50 bg-muted/30 text-muted-foreground hover:border-primary/50"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                            selectedAnswers[currentQuestion] === idx ? "border-primary bg-primary" : "border-border/50"
-                          }`}
-                        >
-                          {selectedAnswers[currentQuestion] === idx && (
-                            <div className="w-2 h-2 bg-primary-foreground rounded-full"></div>
-                          )}
-                        </div>
-                        {option}
-                      </div>
-                    </button>
-                  ))}
+            <Card className="glass-effect border-primary/20 bg-secondary/5">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-4">
+                  <div className="text-2xl">✨</div>
+                  <div>
+                    <h4 className="font-semibold text-foreground mb-2">AI-Assisted Quiz Creation</h4>
+                    <p className="text-sm text-muted-foreground">
+                      After uploading your PDF, our AI will automatically generate quiz questions. You can review, edit,
+                      and add your own questions before publishing.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              </CardContent>
+            </Card>
 
-              {/* Navigation */}
-              <Button
-                onClick={handleNext}
-                disabled={selectedAnswers[currentQuestion] === undefined}
-                className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold disabled:opacity-50"
-              >
-                {currentQuestion === questions.length - 1 ? "Submit Quiz" : "Next Question"}
-              </Button>
-            </div>
-          </>
-        )}
-
-        {stage === "results" && (
-          <>
-            <DialogHeader>
-              <DialogTitle>Quiz Results</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-6">
-              {/* Score Card */}
-              <Card className="glass-effect border-primary/20 bg-gradient-to-br from-primary/10 to-secondary/10">
-                <CardContent className="pt-8 text-center">
-                  <div className="text-6xl font-bold gradient-text mb-2">{Math.round(score)}%</div>
-                  <p className="text-lg text-muted-foreground">Quiz Accuracy</p>
-                </CardContent>
-              </Card>
-
-              {/* Stats */}
-              <div className="grid grid-cols-2 gap-4">
-                <Card className="glass-effect border-primary/20">
-                  <CardContent className="pt-6 text-center">
-                    <div className="text-3xl font-bold text-secondary">
-                      {Object.values(selectedAnswers).filter((ans, idx) => ans === questions[idx].correct).length}/
-                      {questions.length}
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-2">Correct Answers</p>
-                  </CardContent>
-                </Card>
-
-                <Card className="glass-effect border-primary/20">
-                  <CardContent className="pt-6 text-center">
-                    <div className="text-3xl font-bold text-primary">+1.80 CELO</div>
-                    <p className="text-sm text-muted-foreground mt-2">Earned</p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Reward Animation */}
-              <div className="text-center py-6">
-                <div className="text-5xl mb-3 animate-bounce">💰</div>
-                <p className="text-lg font-semibold text-foreground">Congratulations!</p>
-                <p className="text-sm text-muted-foreground mt-2">Your CELO rewards have been added to your wallet</p>
-              </div>
-
+            <div className="flex gap-3">
               <Button
                 onClick={onClose}
-                className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
+                variant="outline"
+                className="border-secondary text-secondary hover:bg-secondary/10 py-6 text-base font-semibold bg-transparent flex-1"
               >
-                Back to Dashboard
+                Cancel
+              </Button>
+              <Button
+                onClick={handleGenerateQuiz}
+                disabled={!fileName || loading}
+                className="flex-1 bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
+              >
+                {loading ? "Generating..." : "Generate Quiz"}
               </Button>
             </div>
-          </>
+          </div>
+        )}
+
+        {stage === "preview" && (
+          <div className="space-y-6">
+            <h3 className="text-lg font-semibold text-foreground">Quiz Preview</h3>
+            <Card className="glass-effect border-primary/20">
+              <CardHeader>
+                <CardTitle>AI Summary</CardTitle>
+                <CardDescription>Short notes generated from the uploaded PDF</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {analysis ? (
+                  <div>
+                    <div className="prose max-w-none text-foreground">
+                      <p>{analysis.summary}</p>
+                    </div>
+                    <ul className="list-disc ml-6 mt-4 text-foreground">
+                      {(analysis.bullets || []).map((b, i) => (
+                        <li key={i}>{b}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">No analysis available</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="glass-effect border-primary/20">
+              <CardHeader>
+                <CardTitle>Generated Quiz</CardTitle>
+                <CardDescription>Review and edit before publishing</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {analysis && analysis.quiz ? (
+                  <div>
+                    {(analysis.quiz.questions || []).map((q: any, idx: number) => (
+                      <div key={idx} className="p-4 bg-muted/30 rounded-lg mb-3">
+                        <p className="font-semibold text-foreground mb-2">{q.prompt}</p>
+                        <div className="space-y-2">
+                          {(q.options || []).map((opt: string, oi: number) => (
+                            <label key={oi} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                              <input type="radio" name={`q${idx}`} className="w-4 h-4" />
+                              {opt}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">No quiz generated</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="flex gap-3">
+              <Button
+                onClick={() => setStage("upload")}
+                variant="outline"
+                className="border-secondary text-secondary hover:bg-secondary/10 py-6 text-base font-semibold bg-transparent flex-1"
+              >
+                Back
+              </Button>
+              <Button
+                onClick={handlePublish}
+                disabled={loading}
+                className="flex-1 bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
+              >
+                {loading ? "Publishing..." : "Publish Quiz"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {stage === "confirmation" && (
+          <div className="space-y-6 text-center">
+            <div className="text-6xl mb-4 animate-bounce">🎉</div>
+            <h3 className="text-2xl font-bold gradient-text">Quiz Published!</h3>
+            <p className="text-muted-foreground">
+              Your quiz has been successfully created and published. Students can now take it and earn XP rewards.
+            </p>
+
+            <Card className="glass-effect border-primary/20 bg-primary/5">
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Questions</p>
+                    <p className="text-2xl font-bold text-primary">3</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">XP Reward</p>
+                    <p className="text-2xl font-bold text-secondary">50 XP</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Button
+              onClick={onClose}
+              className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
+            >
+              Back to Dashboard
+            </Button>
+          </div>
         )}
       </DialogContent>
     </Dialog>

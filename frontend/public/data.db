@@ -1,2 +1,0 @@
--- Placeholder file. The app uses IndexedDB in the browser for runtime storage.
--- This file is intentionally a placeholder at runtime; browsers cannot write back to files in /public.

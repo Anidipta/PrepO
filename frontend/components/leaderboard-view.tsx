@@ -1,26 +1,47 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
+interface LeaderboardEntry {
+  rank: number
+  address: string
+  score: string
+  celo: string
+  discount: string
+}
+
+interface Leaderboard {
+  title: string
+  category: string
+  entries: LeaderboardEntry[]
+}
+
 export default function LeaderboardView() {
-  const leaderboards = [
-    {
-      title: "DeFi Fundamentals Leaderboard",
-      category: "DeFi",
-      entries: [
-        { rank: 1, address: "0xAb12...Ff34", score: "95.0%", celo: "+50.0 CELO", discount: "50% bounty discount" },
-        { rank: 2, address: "0xCd56...Gh78", score: "92.0%", celo: "+45.0 CELO", discount: "50% bounty discount" },
-        { rank: 3, address: "0xEf90...Ij12", score: "89.0%", celo: "+40.0 CELO", discount: "50% bounty discount" },
-      ],
-    },
-    {
-      title: "Smart Contract Security Leaderboard",
-      category: "Security",
-      entries: [
-        { rank: 1, address: "0xKl34...Mn56", score: "98.5%", celo: "+75.0 CELO", discount: "50% bounty discount" },
-        { rank: 2, address: "0xOp78...Qr90", score: "96.0%", celo: "+65.0 CELO", discount: "50% bounty discount" },
-        { rank: 3, address: "0xSt12...Uv34", score: "93.5%", celo: "+55.0 CELO", discount: "50% bounty discount" },
-      ],
-    },
-  ]
+  const [leaderboards, setLeaderboards] = useState<Leaderboard[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchLeaderboards = async () => {
+      try {
+        const response = await fetch("/api/leaderboards")
+        if (!response.ok) throw new Error("Failed to fetch leaderboards")
+        const data = await response.json()
+        setLeaderboards(data)
+      } catch (error) {
+        console.error("[v0] Error fetching leaderboards:", error)
+        setLeaderboards([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchLeaderboards()
+  }, [])
+
+  if (loading) {
+    return <div className="text-center text-muted-foreground">Loading leaderboards...</div>
+  }
 
   return (
     <div className="space-y-6">

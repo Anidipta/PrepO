@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,125 +12,73 @@ export default function ExploreCourses() {
   const [selectedLevel, setSelectedLevel] = useState("All")
   const [sortBy, setSortBy] = useState("Popular")
   const [viewMode, setViewMode] = useState<"all" | "enrolled">("all")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [courses, setCourses] = useState<any[]>([])
+  const [stats, setStats] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
   const categories = ["All", "DeFi", "Smart Contracts", "Blockchain", "Web3"]
   const levels = ["All", "Beginner", "Intermediate", "Advanced"]
   const sortOptions = ["Popular", "Newest", "Highest Rated", "Most Enrolled"]
 
-  const courses = [
-    {
-      id: 1,
-      title: "DeFi Fundamentals on CELO",
-      mentor: "Dr. Sarah Chen",
-      category: "DeFi",
-      level: "Beginner",
-      duration: "5 days",
-      lessons: 18,
-      xpReward: 650,
-      fee: 5.0,
-      rating: 4.7,
-      enrolled: true,
-      progress: 75,
-      image: "https://images.unsplash.com/photo-1639762681033-6461efb0efa8?w=400&h=300&fit=crop",
-    },
-    {
-      id: 2,
-      title: "CELO Ecosystem Deep Dive",
-      mentor: "Maria Santos",
-      category: "Blockchain",
-      level: "Intermediate",
-      duration: "10 days",
-      lessons: 30,
-      xpReward: 1200,
-      fee: 8.0,
-      rating: 4.5,
-      enrolled: true,
-      progress: 45,
-      image: "https://images.unsplash.com/photo-1526374965328-7f5ae4e8a83f?w=400&h=300&fit=crop",
-    },
-    {
-      id: 3,
-      title: "Solidity Development Masterclass",
-      mentor: "Alex Rodriguez",
-      category: "Smart Contracts",
-      level: "Intermediate",
-      duration: "10 days",
-      lessons: 18,
-      xpReward: 1500,
-      fee: 12.0,
-      rating: 4.8,
-      enrolled: false,
-      progress: 0,
-      image: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=400&h=300&fit=crop",
-    },
-    {
-      id: 4,
-      title: "Mobile DeFi UX Design",
-      mentor: "Jordan Lee",
-      category: "Web3",
-      level: "Beginner",
-      duration: "5 days",
-      lessons: 10,
-      xpReward: 800,
-      fee: 6.0,
-      rating: 4.6,
-      enrolled: false,
-      progress: 0,
-      image: "https://images.unsplash.com/photo-1561070791-2526d30994b5?w=400&h=300&fit=crop",
-    },
-    {
-      id: 5,
-      title: "Advanced Smart Contract Security",
-      mentor: "Dr. James Park",
-      category: "Smart Contracts",
-      level: "Advanced",
-      duration: "10 days",
-      lessons: 25,
-      xpReward: 2000,
-      fee: 15.0,
-      rating: 4.9,
-      enrolled: false,
-      progress: 0,
-      image: "https://images.unsplash.com/photo-1516321318423-f06f70d504f0?w=400&h=300&fit=crop",
-    },
-    {
-      id: 6,
-      title: "Blockchain Basics for Beginners",
-      mentor: "Emma Wilson",
-      category: "Blockchain",
-      level: "Beginner",
-      duration: "1 day",
-      lessons: 8,
-      xpReward: 400,
-      fee: 2.5,
-      rating: 4.4,
-      enrolled: false,
-      progress: 0,
-      image: "https://images.unsplash.com/photo-1518611505868-48510c2e2b3d?w=400&h=300&fit=crop",
-    },
-  ]
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/courses`)
+        const json = await res.json()
+        if (json?.success) {
+          setCourses(json.data || [])
+          const enrolledCount = (json.data || []).filter((c: any) => c.enrolled).length
+          const avgRating =
+            (json.data || []).length > 0
+              ? (
+                  (json.data || []).reduce((sum: number, c: any) => sum + (c.rating || 0), 0) / (json.data || []).length
+                ).toFixed(1)
+              : "0"
+          setStats([
+            { label: "Total Courses", value: (json.data || []).length, icon: "📚" },
+            { label: "My Enrollments", value: enrolledCount, icon: "👤" },
+            {
+              label: "Total XP Available",
+              value: (json.data || []).reduce((sum: number, c: any) => sum + (c.xpReward || 0), 0),
+              icon: "🏆",
+            },
+            { label: "Avg Course Rating", value: avgRating, icon: "⭐" },
+          ])
+        }
+      } catch (err) {
+        console.error("Failed to fetch courses", err)
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [])
 
-  const filteredCourses = courses.filter((course) => {
-    const categoryMatch = selectedCategory === "All" || course.category === selectedCategory
-    const levelMatch = selectedLevel === "All" || course.level === selectedLevel
-    const viewMatch = viewMode === "all" || course.enrolled
-    return categoryMatch && levelMatch && viewMatch
-  })
-
-  const stats = [
-    { label: "Total Courses", value: "8", icon: "📚" },
-    { label: "My Enrollments", value: "2", icon: "👤" },
-    { label: "Total XP Available", value: "650", icon: "🏆" },
-    { label: "Avg Course Rating", value: "4.7", icon: "⭐" },
-  ]
+  const filteredCourses = courses
+    .filter((course) => {
+      const categoryMatch = selectedCategory === "All" || course.category === selectedCategory
+      const levelMatch = selectedLevel === "All" || course.level === selectedLevel
+      const viewMatch = viewMode === "all" || course.enrolled
+      const searchMatch = searchQuery === "" || course.title.toLowerCase().includes(searchQuery.toLowerCase())
+      return categoryMatch && levelMatch && viewMatch && searchMatch
+    })
+    .sort((a, b) => {
+      if (sortBy === "Newest") return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      if (sortBy === "Highest Rated") return (b.rating || 0) - (a.rating || 0)
+      if (sortBy === "Most Enrolled") return (b.enrolled ? 1 : 0) - (a.enrolled ? 1 : 0)
+      return 0 // Popular (default)
+    })
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Animated background */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-primary/5 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-secondary/5 rounded-full blur-3xl"></div>
-      </div>
+    <div className="min-h-screen relative bg-background overflow-hidden">
+      <div
+        className="absolute inset-0 bg-cover bg-center opacity-50 animate-[loop_60s_linear_infinite]"
+        style={{
+          backgroundImage: "url('/s0.gif')",
+          backgroundRepeat: "repeat",
+          zIndex: 0,
+        }}
+      ></div>
 
       <div className="relative z-10">
         {/* Header */}
@@ -244,6 +192,8 @@ export default function ExploreCourses() {
                   <input
                     type="text"
                     placeholder="Search courses..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
                   />
                 </div>
@@ -254,7 +204,10 @@ export default function ExploreCourses() {
           {/* Courses Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredCourses.map((course) => (
-              <CourseCard key={course.id} course={course} />
+              <CourseCard
+                key={course.code || course._id}
+                course={{ ...course, image: course.image || "/placeholder-logo.png" }}
+              />
             ))}
           </div>
 

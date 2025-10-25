@@ -6,24 +6,58 @@ import RoleSelectionModal from "@/components/role-selection-modal"
 import NameInputModal from "@/components/name-input-modal"
 import { useRouter } from "next/navigation"
 import TargetCursor from "@/components/TargetCursor"
-import { initDB, getUser, saveUser, logActivity } from "@/lib/client-db"
 import { useConnectModal } from "@rainbow-me/rainbowkit"
 import { useAccount } from "wagmi"
 
 export default function Home() {
   const [showNameModal, setShowNameModal] = useState(false)
   const [showRoleModal, setShowRoleModal] = useState(false)
-  const [pendingName, setPendingName] = useState<string | null>(null)
+  const [userName, setUserName] = useState<string>("")
 
   const router = useRouter()
   const { openConnectModal } = useConnectModal()
   const { address, isConnected } = useAccount()
 
   const handleNameSubmit = (name: string) => {
-    setPendingName(name)
+    setUserName(name)
     setShowNameModal(false)
     setShowRoleModal(true)
   }
+
+  // When the wallet connects, automatically check MongoDB for the user and continue flow
+  useEffect(() => {
+    const run = async () => {
+      if (!isConnected || !address) return
+
+      try {
+        // Query our backend to see if the user exists
+        const res = await fetch(`/api/user/${address}`)
+        const data = await res.json()
+        if (res.ok && data.found && data.user) {
+          const role = data.user.role
+          if (role === "mentor") {
+            window.location.href = "/mentor-dashboard"
+          } else {
+            window.location.href = "/mentee-dashboard"
+          }
+        } else {
+          // New user: prompt for name then role selection
+          setShowNameModal(true)
+        }
+      } catch (err) {
+        console.error("Error checking user after connect", err)
+        setShowNameModal(true)
+      }
+    }
+
+    run()
+  }, [isConnected, address])
+
+  useEffect(() => {
+    if (isConnected && address) {
+      localStorage.setItem("walletAddress", address)
+    }
+  }, [isConnected, address])
 
   const handleLaunch = async () => {
     if (openConnectModal && !isConnected) {
@@ -31,26 +65,9 @@ export default function Home() {
       return
     }
 
-    const addr = address
+    if (!isConnected) return
 
-    if (!addr) return
-
-    try {
-      await initDB()
-      const user = await getUser(addr)
-      if (user) {
-        if (user.role === "mentor") {
-          window.location.href = "/mentor-dashboard"
-        } else {
-          window.location.href = "/mentee-dashboard"
-        }
-      } else {
-        setShowNameModal(true)
-      }
-    } catch (e) {
-      console.error("DB error", e)
-      setShowNameModal(true)
-    }
+    setShowNameModal(true)
   }
 
   // 🎥 Reverse + Forward video playback logic
@@ -96,12 +113,11 @@ export default function Home() {
         />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/30 to-black/60 pointer-events-none" />
       </div>
-
       {/* 🧠 Main Content */}
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4">
         <div className="text-center max-w-4xl mx-auto mb-12">
           <h1 className="text-6xl md:text-7xl font-bold mb-6 leading-tight">
-            <span className="gradient-text">PrepO</span>
+            <span className="glow-text">PrepO</span>
             <br />
           </h1>
 
@@ -170,9 +186,21 @@ export default function Home() {
           try {
             const addr = address || ""
             if (!addr) return
-            const name = pendingName || localStorage.getItem("userName") || ""
-            await saveUser({ address: addr, name: name || "Unknown", role })
-            await logActivity(addr, { type: "role_selected", payload: { role } })
+            const name = userName || localStorage.getItem("userName") || "Unknown"
+
+            // Save to server-side MongoDB via API
+            await fetch(`/api/user/save`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ address: addr, name, role }),
+            })
+
+            // Redirect to appropriate dashboard
+            if (role === "mentor") {
+              window.location.href = "/mentor-dashboard"
+            } else {
+              window.location.href = "/mentee-dashboard"
+            }
           } catch (e) {
             console.error("Failed to save user", e)
           }

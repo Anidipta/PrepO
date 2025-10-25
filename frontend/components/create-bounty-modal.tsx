@@ -1,27 +1,29 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
+import { useWallet } from "@/components/wallet-provider"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Card, CardContent } from "@/components/ui/card"
 
 interface CreateBountyModalProps {
   onClose: () => void
 }
 
 export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
-  const [stage, setStage] = useState<"details" | "requirements" | "confirmation">("details")
+  const { address } = useWallet()
+  const [loading, setLoading] = useState(false)
+  const [stage, setStage] = useState("details")
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    linkedCourse: "DeFi Fundamentals on CELO",
     prizePool: "",
     entryFee: "",
-    topWinners: "3",
+    topWinners: "",
     maxEntries: "",
     deadline: "",
+    linkedCourse: "",
   })
   const [requirements, setRequirements] = useState<string[]>([])
   const [newRequirement, setNewRequirement] = useState("")
@@ -33,20 +35,68 @@ export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
 
   const addRequirement = () => {
     if (newRequirement.trim()) {
-      setRequirements([...requirements, newRequirement])
+      setRequirements((prev) => [...prev, newRequirement.trim()])
       setNewRequirement("")
     }
   }
 
   const removeRequirement = (idx: number) => {
-    setRequirements(requirements.filter((_, i) => i !== idx))
+    setRequirements((prev) => prev.filter((_, i) => i !== idx))
   }
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (stage === "details") {
       setStage("requirements")
     } else if (stage === "requirements") {
       setStage("confirmation")
+      if (address) {
+        setLoading(true)
+        try {
+          // Support optional file upload via FormData
+          let response: Response
+          if (selectedFile) {
+            const form = new FormData()
+            form.append("title", formData.title)
+            form.append("description", formData.description)
+            form.append("prizePool", formData.prizePool)
+            form.append("entryFee", formData.entryFee)
+            form.append("topWinners", formData.topWinners)
+            form.append("maxEntries", formData.maxEntries)
+            form.append("deadline", formData.deadline)
+            form.append("linkedCourse", formData.linkedCourse)
+            form.append("requirements", requirements)
+            form.append("mentorAddress", address)
+            form.append("file", selectedFile)
+            response = await fetch("/api/bounties", { method: "POST", body: form })
+          } else {
+            response = await fetch("/api/bounties", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title: formData.title,
+                description: formData.description,
+                category: "General",
+                difficulty: "Medium",
+                prizePool: Number.parseFloat(formData.prizePool),
+                entryFee: Number.parseFloat(formData.entryFee),
+                topWinners: Number.parseInt(formData.topWinners),
+                maxEntries: Number.parseInt(formData.maxEntries),
+                deadline: formData.deadline,
+                mentorAddress: address,
+                linkedCourse: formData.linkedCourse,
+                requirements: requirements.split("\n").filter((r) => r.trim()),
+              }),
+            })
+          }
+          if (!response.ok) throw new Error("Failed to create bounty")
+          const data = await response.json()
+          console.log("[v0] Bounty created with code:", data.code)
+        } catch (error) {
+          console.error("[v0] Error creating bounty:", error)
+        } finally {
+          setLoading(false)
+        }
+      }
     }
   }
 
@@ -85,6 +135,12 @@ export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
                   rows={4}
                   className="w-full px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary resize-none"
                 />
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-foreground block mb-2">Attach File (optional)</label>
+                <input type="file" accept=".pdf" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+                {selectedFile && <p className="text-sm text-muted-foreground mt-2">Selected: {selectedFile.name}</p>}
               </div>
 
               <div>

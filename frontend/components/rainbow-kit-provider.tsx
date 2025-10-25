@@ -10,7 +10,8 @@ import "@rainbow-me/rainbowkit/styles.css"
 const config = getDefaultConfig({
   appName: "PrepO",
   projectId: "119442ff43869e1b4441f834e616d62d",
-  chains: [celo, celoSepolia],
+  // Restrict to Celo Sepolia testnet only
+  chains: [celoSepolia],
   ssr: true,
 })
 

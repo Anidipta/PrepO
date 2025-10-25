@@ -11,20 +11,20 @@
   --card-foreground: #f5f5f5;
   --popover: #1a1f3a;
   --popover-foreground: #f5f5f5;
-  --primary: #ff6b35;
+  --primary: #faccbc;
   --primary-foreground: #0a0e27;
-  --secondary: #bfff00;
+  --secondary: #fec1cf;
   --secondary-foreground: #f5f5f5;
   --muted: #2d3548;
   --muted-foreground: #a0a0a0;
-  --accent: #ff6b35;
+  --accent: #faccbc;
   --accent-foreground: #0a0e27;
   --destructive: #ff4444;
   --destructive-foreground: #f5f5f5;
   --border: #2d3548;
   --input: #1a1f3a;
   --ring: #4a90e2;
-  --chart-1: #ff6b35;
+  --chart-1: #faccbc;
   --chart-2: #4a90e2;
   --chart-3: #00d9ff;
   --chart-4: #ff00ff;
@@ -32,7 +32,7 @@
   --radius: 0.625rem;
   --sidebar: #1a1f3a;
   --sidebar-foreground: #f5f5f5;
-  --sidebar-primary: #ff6b35;
+  --sidebar-primary: #faccbc;
   --sidebar-primary-foreground: #0a0e27;
   --sidebar-accent: #4a90e2;
   --sidebar-accent-foreground: #f5f5f5;
@@ -43,31 +43,31 @@
 .dark {
   --background: #0a0e27;
   --foreground: #f5f5f5;
-  --card: #1a1f3a;
+  --card: #000000;
   --card-foreground: #f5f5f5;
   --popover: #1a1f3a;
   --popover-foreground: #f5f5f5;
-  --primary: #ff6b35;
-  --primary-foreground: #0a0e27;
-  --secondary: #4a90e2;
-  --secondary-foreground: #f5f5f5;
+  --primary: #faccbc;
+  --primary-foreground: #000000;
+  --secondary: #fec1cf;
+  --secondary-foreground: #0022ff;
   --muted: #2d3548;
   --muted-foreground: #a0a0a0;
-  --accent: #ff6b35;
+  --accent: #faccbc;
   --accent-foreground: #0a0e27;
   --destructive: #ff4444;
   --destructive-foreground: #f5f5f5;
   --border: #2d3548;
   --input: #1a1f3a;
   --ring: #4a90e2;
-  --chart-1: #ff6b35;
+  --chart-1: #faccbc;
   --chart-2: #4a90e2;
   --chart-3: #00d9ff;
   --chart-4: #ff00ff;
   --chart-5: #00ff88;
   --sidebar: #1a1f3a;
   --sidebar-foreground: #f5f5f5;
-  --sidebar-primary: #ff6b35;
+  --sidebar-primary: #faccbc;
   --sidebar-primary-foreground: #0a0e27;
   --sidebar-accent: #4a90e2;
   --sidebar-accent-foreground: #f5f5f5;
@@ -155,17 +155,25 @@
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #ff6b35 0%, #4a90e2 100%);
+  background: linear-gradient(135deg, #faccbc 0%, #fec1cf 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
+.glow-text {
+  color: #000; /* solid black text */
+  text-shadow:
+    0 0 2px #fff,
+    0 0 4px #fff,
+    0 0 6px #fff,
+    0 0 8px #fff;
+}
+
 .glass-effect {
   background:none;
-  align-items: center;
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 107, 53, 0.2);
+  border: 2px solid rgb(254, 193, 207);
 }
 
 /* Background video helper styles */

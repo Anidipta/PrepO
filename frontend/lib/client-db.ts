@@ -55,7 +55,12 @@ export async function logActivity(address: string, activity: { type: string; pay
   const db = await openDB()
   const tx = db.transaction(STORE_ACTIVITIES, "readwrite")
   const store = tx.objectStore(STORE_ACTIVITIES)
-  const entry = { address, type: activity.type, payload: activity.payload || null, timestamp: activity.timestamp || Date.now() }
+  const entry = {
+    address,
+    type: activity.type,
+    payload: activity.payload || null,
+    timestamp: activity.timestamp || Date.now(),
+  }
   return new Promise((resolve, reject) => {
     const req = store.add(entry)
     req.onsuccess = () => resolve(req.result)

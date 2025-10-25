@@ -1,26 +1,33 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useWallet } from "@/components/wallet-provider"
+import { useAccount, useBalance, useDisconnect } from "wagmi"
+import { celoSepolia } from "wagmi/chains"
 import CreateCourseModal from "@/components/create-course-modal"
 import CreateBountyModal from "@/components/create-bounty-modal"
 import LeaderboardView from "@/components/leaderboard-view"
+import TargetCursor from "@/components/TargetCursor"
 
 export default function MentorDashboard() {
   const router = useRouter()
-  const { disconnectWallet } = useWallet()
+  const { address } = useAccount()
+  const { data: balanceData } = useBalance({ address: (address as `0x${string}`) || undefined, chainId: celoSepolia.id, watch: true })
+  const { disconnect } = useDisconnect()
   const [showCreateCourse, setShowCreateCourse] = useState(false)
   const [showCreateBounty, setShowCreateBounty] = useState(false)
+  const [userName, setUserName] = useState<string | null>(typeof window !== "undefined" ? localStorage.getItem("userName") : null)
+  const [coursesCount, setCoursesCount] = useState<number>(0)
+  const [bountiesCount, setBountiesCount] = useState<number>(0)
 
   const stats = [
-    { label: "Courses Created", value: "12", icon: "📚" },
-    { label: "Bounties Active", value: "8", icon: "🏆" },
-    { label: "Total CELO Earned", value: "2,847.50", icon: "💰" },
-    { label: "Top Mentees", value: "156", icon: "👥" },
+    { label: "Courses Created", value: String(coursesCount || 0), icon: "📚" },
+    { label: "Bounties Active", value: String(bountiesCount || 0), icon: "🏆" },
+    { label: "Total CELO Earned", value: balanceData?.formatted ? parseFloat(balanceData.formatted).toFixed(3) : "0.000", icon: "💰" },
+    { label: "Top Mentees", value: "--", icon: "👥" },
   ]
 
   const recentCourses = [
@@ -68,33 +75,109 @@ export default function MentorDashboard() {
     },
   ]
 
-  return (
-    <div className="min-h-screen bg-background">
-      {/* Animated background */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-primary/5 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-secondary/5 rounded-full blur-3xl"></div>
-      </div>
+  useEffect(() => {
+    if (!address) return
+    ;(async () => {
+      try {
+        // save wallet address for faster access
+        try {
+          localStorage.setItem("walletAddress", address)
+        } catch (e) {
+          /* ignore storage errors */
+        }
 
-      <div className="relative z-10">
+        const res = await fetch(`/api/user/${address}`)
+        const json = await res.json()
+        if (json?.found && json.user?.name) {
+          setUserName(json.user.name)
+          try { localStorage.setItem("userName", json.user.name) } catch (e) {}
+        }
+
+        try {
+          const coursesRes = await fetch(`/api/courses`)
+          if (coursesRes.ok) {
+            const coursesJson = await coursesRes.json()
+            setCoursesCount(Array.isArray(coursesJson) ? coursesJson.length : (coursesJson.count ?? 0))
+          }
+        } catch (e) {
+          console.warn("Failed to fetch courses count", e)
+        }
+
+        try {
+          const bountiesRes = await fetch(`/api/bounties`)
+          if (bountiesRes.ok) {
+            const bountiesJson = await bountiesRes.json()
+            setBountiesCount(Array.isArray(bountiesJson) ? bountiesJson.length : (bountiesJson.count ?? 0))
+          }
+        } catch (e) {
+          console.warn("Failed to fetch bounties count", e)
+        }
+      } catch (err) {
+        console.error("Failed to fetch user", err)
+      }
+    })()
+  }, [address])
+
+  return (
+  <div className="min-h-screen">
+    <div
+      style={{
+        background: "linear-gradient(135deg, #faccbc 0%, #2b2f21ff 100%)",
+        borderRadius: 12,
+        position: "relative", 
+        overflow: "hidden",
+      }}
+    >
+      <div
+        className="absolute inset-0 opacity-80"
+        style={{
+          backgroundImage: "url('/s0.gif')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "repeat",
+          zIndex: 0,
+        }}
+      ></div>
+
+      <div
+        style={{
+          background: "rgba(0,0,0,0.5)",
+          position: "relative",
+          zIndex: 1, // keep content above the gif
+          
+        }}
+        className="min-h-screen-full"
+      >
+
+          <div className="relative z-10">
         {/* Header */}
         <header className="border-b border-border/50 backdrop-blur-sm sticky top-0 z-20">
           <div className="max-w-7xl mx-auto px-4 py-6">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-foreground">
-                  Mentor <span className="gradient-text">Dashboard</span>
-                </h1>
-                <p className="text-muted-foreground mt-1">Welcome back, Dr. Sarah Chen</p>
-              </div>
+                <div className="flex items-center gap-4">
+                  <img src="/placeholder-user.jpg" alt="avatar" className="w-20 h-20 rounded-md" />
+                  <div>
+                    <h1 className="text-3xl font-bold text-foreground">
+                      Mentor <span className="gradient-text">Dashboard</span>
+                    </h1>
+                    <p className="text-muted-foreground mt-1">Welcome back, {userName || "Mentor"}</p>
+                  </div>
+                </div>
               <div className="flex items-center gap-6">
                 <div className="text-right">
-                  <div className="text-sm text-muted-foreground">Wallet Balance</div>
-                  <div className="text-2xl font-bold text-primary">0xAb12...Ff34</div>
-                  <div className="text-lg font-semibold text-secondary">2,847.50 CELO</div>
+                  <div className="text-sm text-muted-foreground">Wallet</div>
+                  <div className="text-2xl font-bold text-primary">
+                    {address ? `${address.slice(0, 5)}...${address.slice(-2)}` : "-"}
+                  </div>
+                  <div className="text-lg font-semibold text-secondary">
+                    {balanceData?.formatted ? `${parseFloat(balanceData.formatted).toFixed(3)}` : "0.000"} CELO
+                  </div>
                 </div>
                 <Button
-                  onClick={() => disconnectWallet()}
+                  onClick={() => {
+                    disconnect()
+                    router.push("/")
+                  }}
                   className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground px-6 py-2 rounded-lg"
                 >
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -256,12 +339,16 @@ export default function MentorDashboard() {
               <LeaderboardView />
             </TabsContent>
           </Tabs>
+          <TargetCursor />
         </main>
-      </div>
+          </div>
+        </div>
 
       {/* Modals */}
       {showCreateCourse && <CreateCourseModal onClose={() => setShowCreateCourse(false)} />}
       {showCreateBounty && <CreateBountyModal onClose={() => setShowCreateBounty(false)} />}
     </div>
+
+  </div>
   )
 }
