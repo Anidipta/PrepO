@@ -1,0 +1,310 @@
+"use client"
+
+import type React from "react"
+
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+
+interface CreateBountyModalProps {
+  onClose: () => void
+}
+
+export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
+  const [stage, setStage] = useState<"details" | "requirements" | "confirmation">("details")
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    linkedCourse: "DeFi Fundamentals on CELO",
+    prizePool: "",
+    entryFee: "",
+    topWinners: "3",
+    maxEntries: "",
+    deadline: "",
+  })
+  const [requirements, setRequirements] = useState<string[]>([])
+  const [newRequirement, setNewRequirement] = useState("")
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target
+    setFormData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const addRequirement = () => {
+    if (newRequirement.trim()) {
+      setRequirements([...requirements, newRequirement])
+      setNewRequirement("")
+    }
+  }
+
+  const removeRequirement = (idx: number) => {
+    setRequirements(requirements.filter((_, i) => i !== idx))
+  }
+
+  const handleNext = () => {
+    if (stage === "details") {
+      setStage("requirements")
+    } else if (stage === "requirements") {
+      setStage("confirmation")
+    }
+  }
+
+  return (
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="glass-effect border-primary/30 max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Create Bounty</DialogTitle>
+        </DialogHeader>
+
+        {stage === "details" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left Column */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-foreground mb-4">Bounty Details</h3>
+
+              <div>
+                <label className="text-sm font-semibold text-foreground block mb-2">Bounty Title *</label>
+                <input
+                  type="text"
+                  name="title"
+                  placeholder="e.g., DeFi Protocol Analysis Challenge"
+                  value={formData.title}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-foreground block mb-2">Description *</label>
+                <textarea
+                  name="description"
+                  placeholder="Describe the challenge and what participants need to do..."
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  rows={4}
+                  className="w-full px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-foreground block mb-2">Linked Course *</label>
+                <select
+                  name="linkedCourse"
+                  value={formData.linkedCourse}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground focus:outline-none focus:border-primary"
+                >
+                  <option value="DeFi Fundamentals on CELO">DeFi Fundamentals on CELO</option>
+                  <option value="Smart Contract Security">Smart Contract Security</option>
+                  <option value="CELO Ecosystem Deep Dive">CELO Ecosystem Deep Dive</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Right Column */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-foreground mb-4">Prize & Entry</h3>
+
+              <div>
+                <label className="text-sm font-semibold text-foreground block mb-2">Prize Pool (CELO) *</label>
+                <input
+                  type="number"
+                  name="prizePool"
+                  placeholder="e.g., 500"
+                  value={formData.prizePool}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-foreground block mb-2">Entry Fee (CELO) *</label>
+                <input
+                  type="number"
+                  name="entryFee"
+                  placeholder="e.g., 0.5"
+                  value={formData.entryFee}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-semibold text-foreground block mb-2">Top Winners *</label>
+                  <select
+                    name="topWinners"
+                    value={formData.topWinners}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground focus:outline-none focus:border-primary"
+                  >
+                    <option value="1">Top 1</option>
+                    <option value="3">Top 3</option>
+                    <option value="5">Top 5</option>
+                    <option value="10">Top 10</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold text-foreground block mb-2">Max Entries *</label>
+                  <input
+                    type="number"
+                    name="maxEntries"
+                    placeholder="e.g., 50"
+                    value={formData.maxEntries}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-foreground block mb-2">Deadline *</label>
+                <input
+                  type="text"
+                  name="deadline"
+                  placeholder="dd-mm-yyyy"
+                  value={formData.deadline}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <Card className="glass-effect border-primary/20 bg-primary/5">
+                <CardContent className="pt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Enrolled students get 50% discount on entry fee. Non-enrolled pay full price.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {stage === "requirements" && (
+          <div className="space-y-6">
+            <h3 className="text-lg font-semibold text-foreground">Requirements</h3>
+
+            <div>
+              <label className="text-sm font-semibold text-foreground block mb-2">Add Requirement</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g., Submit detailed analysis report"
+                  value={newRequirement}
+                  onChange={(e) => setNewRequirement(e.target.value)}
+                  className="flex-1 px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
+                />
+                <Button
+                  onClick={addRequirement}
+                  className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground px-6"
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+
+            {requirements.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-3">Requirements List</h4>
+                <div className="space-y-2">
+                  {requirements.map((req, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <span className="text-primary">✓</span>
+                        <span className="text-foreground">{req}</span>
+                      </div>
+                      <button
+                        onClick={() => removeRequirement(idx)}
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <Card className="glass-effect border-primary/20 bg-secondary/5">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-4">
+                  <div className="text-2xl">🔒</div>
+                  <div>
+                    <h4 className="font-semibold text-foreground mb-2">Smart Contract Escrow</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Your prize pool will be secured in a smart contract escrow. Funds are automatically distributed to
+                      winners when the bounty ends.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {stage === "confirmation" && (
+          <div className="space-y-6">
+            <h3 className="text-lg font-semibold text-foreground">Bounty Live!</h3>
+
+            <Card className="glass-effect border-primary/20 bg-gradient-to-br from-primary/10 to-secondary/10">
+              <CardContent className="pt-8 text-center">
+                <div className="text-6xl mb-4 animate-bounce">🎉</div>
+                <h4 className="text-2xl font-bold gradient-text mb-2">{formData.title}</h4>
+                <p className="text-muted-foreground mb-6">Linked to {formData.linkedCourse}</p>
+
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="p-4 bg-muted/30 rounded-lg">
+                    <p className="text-sm text-muted-foreground">Prize Pool</p>
+                    <p className="text-2xl font-bold text-primary">{formData.prizePool} CELO</p>
+                  </div>
+                  <div className="p-4 bg-muted/30 rounded-lg">
+                    <p className="text-sm text-muted-foreground">Entry Fee</p>
+                    <p className="text-2xl font-bold text-secondary">{formData.entryFee} CELO</p>
+                  </div>
+                </div>
+
+                <p className="text-sm text-muted-foreground">
+                  Your bounty is now live and students can start entering. Prize pool is secured in smart contract
+                  escrow.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Navigation Buttons */}
+        <div className="flex gap-3 mt-6">
+          {stage !== "details" && (
+            <Button
+              onClick={() => setStage(stage === "requirements" ? "details" : "requirements")}
+              variant="outline"
+              className="border-secondary text-secondary hover:bg-secondary/10 py-6 text-base font-semibold bg-transparent"
+            >
+              Back
+            </Button>
+          )}
+
+          {stage !== "confirmation" && (
+            <Button
+              onClick={handleNext}
+              className="flex-1 bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
+            >
+              {stage === "requirements" ? "Launch Bounty" : "Next"}
+            </Button>
+          )}
+
+          {stage === "confirmation" && (
+            <Button
+              onClick={onClose}
+              className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
+            >
+              Back to Dashboard
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
