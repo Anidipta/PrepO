@@ -22,6 +22,9 @@ export default function MentorDashboard() {
   const [userName, setUserName] = useState<string | null>(typeof window !== "undefined" ? localStorage.getItem("userName") : null)
   const [coursesCount, setCoursesCount] = useState<number>(0)
   const [bountiesCount, setBountiesCount] = useState<number>(0)
+  const [mentorCourses, setMentorCourses] = useState<any[]>([])
+  const [mentorBounties, setMentorBounties] = useState<any[]>([])
+  const [pendingEnrollments, setPendingEnrollments] = useState<any[]>([])
 
   const stats = [
     { label: "Courses Created", value: String(coursesCount || 0), icon: "📚" },
@@ -30,50 +33,7 @@ export default function MentorDashboard() {
     { label: "Top Mentees", value: "--", icon: "👥" },
   ]
 
-  const recentCourses = [
-    {
-      title: "DeFi Fundamentals",
-      enrollments: 89,
-      avgScore: "87.5%",
-      reward: "5.0 CELO",
-    },
-    {
-      title: "Smart Contract Security",
-      enrollments: 67,
-      avgScore: "92.3%",
-      reward: "12.5 CELO",
-    },
-    {
-      title: "CELO Ecosystem Deep Dive",
-      enrollments: 134,
-      avgScore: "85.7%",
-      reward: "25.0 CELO",
-    },
-  ]
-
-  const activeBounties = [
-    {
-      title: "DeFi Protocol Analysis Challenge",
-      entries: 23,
-      prizePool: 500,
-      status: "Active",
-      endsIn: "2 days",
-    },
-    {
-      title: "Smart Contract Audit Competition",
-      entries: 18,
-      prizePool: 750,
-      status: "Active",
-      endsIn: "5 days",
-    },
-    {
-      title: "CELO dApp Building Contest",
-      entries: 41,
-      prizePool: 1000,
-      status: "Active",
-      endsIn: "8 days",
-    },
-  ]
+  // recentCourses and activeBounties are loaded from the server into state: mentorCourses, mentorBounties
 
   useEffect(() => {
     if (!address) return
@@ -94,23 +54,37 @@ export default function MentorDashboard() {
         }
 
         try {
-          const coursesRes = await fetch(`/api/courses`)
+          const coursesRes = await fetch(`/api/courses?mentor=${address}`)
           if (coursesRes.ok) {
             const coursesJson = await coursesRes.json()
-            setCoursesCount(Array.isArray(coursesJson) ? coursesJson.length : (coursesJson.count ?? 0))
+            const data = (coursesJson && coursesJson.data) || coursesJson
+            setCoursesCount(Array.isArray(data) ? data.length : (data.count ?? 0))
+            setMentorCourses(Array.isArray(data) ? data : data.data || [])
           }
         } catch (e) {
-          console.warn("Failed to fetch courses count", e)
+          console.warn("Failed to fetch courses for mentor", e)
         }
 
         try {
-          const bountiesRes = await fetch(`/api/bounties`)
+          const bountiesRes = await fetch(`/api/bounties?mentor=${address}`)
           if (bountiesRes.ok) {
             const bountiesJson = await bountiesRes.json()
-            setBountiesCount(Array.isArray(bountiesJson) ? bountiesJson.length : (bountiesJson.count ?? 0))
+            const data = (bountiesJson && bountiesJson.data) || bountiesJson
+            setBountiesCount(Array.isArray(data) ? data.length : (data.count ?? 0))
+            setMentorBounties(Array.isArray(data) ? data : data.data || [])
           }
         } catch (e) {
-          console.warn("Failed to fetch bounties count", e)
+          console.warn("Failed to fetch bounties for mentor", e)
+        }
+        try {
+          const pendRes = await fetch(`/api/courses/pending?mentor=${address}`)
+          if (pendRes.ok) {
+            const pendJson = await pendRes.json()
+            const pendData = (pendJson && pendJson.data) || pendJson
+            setPendingEnrollments(Array.isArray(pendData) ? pendData : [])
+          }
+        } catch (e) {
+          console.warn("Failed to fetch pending enrollments", e)
         }
       } catch (err) {
         console.error("Failed to fetch user", err)
@@ -282,20 +256,21 @@ export default function MentorDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {recentCourses.map((course, idx) => (
+                    {mentorCourses.length === 0 && <p className="text-sm text-muted-foreground">You haven't created any courses yet.</p>}
+                    {mentorCourses.map((c: any) => (
                       <div
-                        key={idx}
+                        key={c.code || c._id}
                         className="flex items-center justify-between p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
                       >
                         <div>
-                          <h4 className="font-semibold text-foreground">{course.title}</h4>
+                          <h4 className="font-semibold text-foreground">{c.title}</h4>
                           <p className="text-sm text-muted-foreground mt-1">
-                            {course.enrollments} enrollments • Avg: {course.avgScore}
+                            {c.enrollments ?? 0} enrollments • Avg: {c.avgScore ?? "0%"}
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold text-primary">{course.reward}</p>
-                          <p className="text-xs text-muted-foreground">per completion</p>
+                          <p className="font-bold text-primary">{c.fee ?? "-"} CELO</p>
+                          <p className="text-xs text-muted-foreground">course fee</p>
                         </div>
                       </div>
                     ))}
@@ -313,20 +288,21 @@ export default function MentorDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {activeBounties.map((bounty, idx) => (
+                    {mentorBounties.length === 0 && <p className="text-sm text-muted-foreground">No active bounties yet.</p>}
+                    {mentorBounties.map((b: any) => (
                       <div
-                        key={idx}
+                        key={b.code || b._id}
                         className="flex items-center justify-between p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
                       >
                         <div>
-                          <h4 className="font-semibold text-foreground">{bounty.title}</h4>
+                          <h4 className="font-semibold text-foreground">{b.title}</h4>
                           <p className="text-sm text-muted-foreground mt-1">
-                            {bounty.entries} entries • Prize Pool: {bounty.prizePool} CELO
+                            {b.entries ?? 0} entries • Prize Pool: {b.prizePool ?? 0} CELO
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold text-secondary">{bounty.status}</p>
-                          <p className="text-xs text-muted-foreground">Ends in {bounty.endsIn}</p>
+                          <p className="font-bold text-secondary">{b.status ?? "Active"}</p>
+                          <p className="text-xs text-muted-foreground">Ends: {b.deadline ? new Date(b.deadline).toLocaleString() : "—"}</p>
                         </div>
                       </div>
                     ))}
@@ -334,6 +310,54 @@ export default function MentorDashboard() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {/* Pending Enrollments (owner actions) */}
+            <div className="mt-6">
+              <Card className="glass-effect border-primary/20 mb-6">
+                <CardHeader>
+                  <CardTitle>Pending Enrollments (Awaiting Owner Confirmation)</CardTitle>
+                  <CardDescription>Students who paid on-chain and are awaiting owner confirmation</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {pendingEnrollments.length === 0 && <p className="text-sm text-muted-foreground">No pending enrollments.</p>}
+                  <div className="space-y-3">
+                    {pendingEnrollments.map((p: any) => (
+                      <div key={String(p._id)} className="flex items-center justify-between p-3 rounded bg-muted/30">
+                        <div>
+                          <div className="font-semibold">{p.courseCode}</div>
+                          <div className="text-sm text-muted-foreground">Student: {p.userAddress}</div>
+                          <div className="text-sm text-muted-foreground">Tx: <a href={`https://explorer.celo.org/tx/${p.txHash}`} target="_blank" rel="noreferrer" className="underline">{p.txHash}</a></div>
+                        </div>
+                        <div>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`/api/courses/${p.courseCode}/verify`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ txHash: p.txHash }),
+                                })
+                                const j = await res.json()
+                                if (!res.ok) throw new Error(j?.error || "Failed to confirm")
+                                // remove from list
+                                setPendingEnrollments((prev) => prev.filter((x) => String(x._id) !== String(p._id)))
+                                alert("Enrollment confirmed on-chain and recorded")
+                              } catch (err) {
+                                console.error("Confirm enrollment failed", err)
+                                alert("Failed to confirm enrollment: " + (err as any)?.message)
+                              }
+                            }}
+                            className="bg-gradient-to-r from-primary to-secondary text-primary-foreground px-4 py-2 rounded"
+                          >
+                            Confirm
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
             <TabsContent value="leaderboards" className="mt-6">
               <LeaderboardView />

@@ -1,7 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useWallet } from "@/components/wallet-provider"
+import { ethers } from "ethers"
+import { createBountyOnChain } from "@/lib/smart-contracts"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,6 +14,7 @@ interface CreateBountyModalProps {
 
 export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
   const { address } = useWallet()
+  const [mentorCourses, setMentorCourses] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [stage, setStage] = useState("details")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -52,6 +55,39 @@ export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
       if (address) {
         setLoading(true)
         try {
+          // try to get signer from injected provider (mentor will fund the prize pool)
+          let signer: any = null
+          if (typeof window !== "undefined" && (window as any).ethereum) {
+            try {
+              await (window as any).ethereum.request?.({ method: "eth_requestAccounts" })
+            } catch (e) {
+              // ignore
+            }
+            const provider = new ethers.BrowserProvider((window as any).ethereum)
+            signer = await provider.getSigner()
+          }
+
+          // generate a client-side bounty code so we can use the same id on-chain and in DB
+          const code = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase()
+
+          // If signer is available, create bounty on-chain (fund prize pool)
+          let txHash: string | null = null
+          let funded = false
+          const prizePoolNum = Number.parseFloat(formData.prizePool || "0") || 0
+          const entryFeeNum = Number.parseFloat(formData.entryFee || "0") || 0
+          const topWinnersNum = Number.parseInt(formData.topWinners || "1") || 1
+          if (signer && prizePoolNum > 0) {
+            try {
+              const onchain = await createBountyOnChain(signer, code, formData.linkedCourse || "", entryFeeNum, topWinnersNum, prizePoolNum)
+              txHash = onchain.txHash
+              funded = true
+              console.log("Bounty funded on-chain tx:", txHash)
+            } catch (txErr) {
+              console.error("On-chain bounty create failed:", txErr)
+              // continue to save to DB but mark as not funded
+            }
+          }
+
           // Support optional file upload via FormData
           let response: Response
           if (selectedFile) {
@@ -64,9 +100,12 @@ export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
             form.append("maxEntries", formData.maxEntries)
             form.append("deadline", formData.deadline)
             form.append("linkedCourse", formData.linkedCourse)
-            form.append("requirements", requirements)
+            form.append("requirements", requirements.join("\n") || "")
             form.append("mentorAddress", address)
             form.append("file", selectedFile)
+            form.append("code", code)
+            form.append("funded", String(funded))
+            if (txHash) form.append("txHash", txHash)
             response = await fetch("/api/bounties", { method: "POST", body: form })
           } else {
             response = await fetch("/api/bounties", {
@@ -77,20 +116,23 @@ export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
                 description: formData.description,
                 category: "General",
                 difficulty: "Medium",
-                prizePool: Number.parseFloat(formData.prizePool),
-                entryFee: Number.parseFloat(formData.entryFee),
-                topWinners: Number.parseInt(formData.topWinners),
-                maxEntries: Number.parseInt(formData.maxEntries),
+                prizePool: prizePoolNum,
+                entryFee: entryFeeNum,
+                topWinners: topWinnersNum,
+                maxEntries: Number.parseInt(formData.maxEntries || "0"),
                 deadline: formData.deadline,
                 mentorAddress: address,
                 linkedCourse: formData.linkedCourse,
-                requirements: requirements.split("\n").filter((r) => r.trim()),
+                requirements: requirements.filter((r) => r.trim()),
+                code,
+                funded,
+                txHash,
               }),
             })
           }
           if (!response.ok) throw new Error("Failed to create bounty")
           const data = await response.json()
-          console.log("[v0] Bounty created with code:", data.code)
+          console.log("[v0] Bounty created with code:", data.data?.code || data.code || code)
         } catch (error) {
           console.error("[v0] Error creating bounty:", error)
         } finally {
@@ -99,6 +141,25 @@ export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
       }
     }
   }
+
+  // load mentor's courses for the linkedCourse select
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        if (!address) return
+        const res = await fetch(`/api/courses?mentor=${address}`)
+  if (!res.ok) return
+  const json = await res.json()
+  if (mounted) setMentorCourses((json && (json.data || json)) || [])
+      } catch (e) {
+        console.warn("Failed to load mentor courses", e)
+      }
+    })()
+    return () => {
+      mounted = false
+    }
+  }, [address])
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -151,9 +212,12 @@ export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
                   onChange={handleInputChange}
                   className="w-full px-4 py-2 rounded-lg bg-muted border border-border/50 text-foreground focus:outline-none focus:border-primary"
                 >
-                  <option value="DeFi Fundamentals on CELO">DeFi Fundamentals on CELO</option>
-                  <option value="Smart Contract Security">Smart Contract Security</option>
-                  <option value="CELO Ecosystem Deep Dive">CELO Ecosystem Deep Dive</option>
+                  <option value="">-- Select a course you created --</option>
+                  {mentorCourses.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.title} ({c.code})
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

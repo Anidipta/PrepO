@@ -1,6 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useAccount } from "wagmi"
+import { CONTRACT_ADDRESS, enrollInCourseOnChain } from "@/lib/smart-contracts"
+import { ethers } from "ethers"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,6 +18,56 @@ export default function CoursePage() {
   const [loading, setLoading] = useState(true)
   const [enrolled, setEnrolled] = useState(false)
   const [progress, setProgress] = useState<any>(null)
+  const [pendingTx, setPendingTx] = useState<string | null>(null)
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null)
+  const { address: connectedAddress } = useAccount()
+
+  // Poll registration status when there's a pending tx
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null
+    const poll = async () => {
+      try {
+        if (!pendingTx || !connectedAddress) return
+        const res = await fetch(`/api/courses/${course.code}/status?address=${connectedAddress}`)
+        if (res.ok) {
+          const j = await res.json()
+          const reg = j.data
+          if (reg && reg.status === "confirmed") {
+            setPendingStatus("confirmed")
+            setPendingTx(reg.txHash || pendingTx)
+            setEnrolled(true)
+            if (timer) clearInterval(timer)
+          }
+        }
+      } catch (e) {
+        console.warn("Polling enrollment status failed", e)
+      }
+    }
+
+    if (pendingTx) {
+      timer = setInterval(poll, 8000)
+      // run immediately
+      poll()
+    }
+
+    return () => {
+      if (timer) clearInterval(timer)
+    }
+  }, [pendingTx, connectedAddress, course?.code])
+  const { address } = useAccount()
+
+  const getSigner = async () => {
+    if (typeof window !== "undefined" && (window as any).ethereum) {
+      try {
+        await (window as any).ethereum.request?.({ method: "eth_requestAccounts" })
+      } catch (e) {
+        // ignore
+      }
+      const provider = new ethers.BrowserProvider((window as any).ethereum)
+      return provider.getSigner()
+    }
+    return null
+  }
 
   useEffect(() => {
     const fetchCourse = async () => {
@@ -227,9 +280,62 @@ export default function CoursePage() {
 
         {/* Enroll Button */}
         {!enrolled && (
-          <Button className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold">
+          <Button
+            onClick={async () => {
+              try {
+                const feeNumber = Number(course.fee || 0)
+                const signer = await getSigner()
+                if (!signer) {
+                  alert("Please connect your wallet to enroll")
+                  return
+                }
+
+                // Call the contract's enrollInCourse which performs the 80/20 split on-chain
+                try {
+                  const result = await enrollInCourseOnChain(signer, course.code, feeNumber)
+                  console.log("enroll tx result:", result)
+
+                  // Get student address from signer to ensure correct from
+                  const studentAddress = await signer.getAddress()
+
+                  // Record enrollment server-side (save txHash for reference)
+                  const res = await fetch(`/api/courses/${course.code}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ userAddress: studentAddress, amountPaid: feeNumber, txHash: result.txHash }),
+                  })
+                  const j = await res.json().catch(() => ({}))
+                  if (!res.ok) {
+                    throw new Error(j?.error || "Failed to record enrollment on server")
+                  }
+
+                  // show pending tx and status
+                  setPendingTx(result.txHash)
+                  setPendingStatus("pending")
+                  setEnrolled(true)
+                  // Don't alert that mentor received funds — wait for owner confirmation
+                  alert("Enrollment submitted on-chain. Waiting for platform confirmation (owner). Transaction: " + result.txHash)
+                } catch (err) {
+                  console.error("Enroll/payment error:", err)
+                  alert("Enrollment failed: " + (err as any)?.message)
+                }
+              } catch (err) {
+                console.error("Enroll error:", err)
+                alert("Enrollment failed: " + (err as any)?.message)
+              }
+            }}
+            className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
+          >
             Enroll Now - {course.fee} CELO
           </Button>
+        )}
+        {/* Pending enrollment banner */}
+        {pendingTx && (
+          <div className="mt-4 p-4 rounded-lg bg-yellow-50 border border-yellow-200">
+            <p className="font-medium">Enrollment pending confirmation</p>
+            <p className="text-sm text-muted-foreground">Transaction: <a href={`https://explorer.celo.org/tx/${pendingTx}`} target="_blank" rel="noreferrer" className="underline">{pendingTx}</a></p>
+            <p className="text-sm text-muted-foreground">Status: {pendingStatus}</p>
+          </div>
         )}
       </div>
     </div>

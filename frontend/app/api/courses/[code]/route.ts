@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getCourseByCodeFromMongo, saveCourseEnrollmentToMongo, deleteCourseFromMongo } from "@/lib/mongodb"
+import { getCourseByCodeFromMongo, savePendingCourseEnrollmentToMongo, deleteCourseFromMongo } from "@/lib/mongodb"
 
 // Handler for fetching, enrolling, and deleting a course by its code
 export async function GET(request: NextRequest, context: any) {
@@ -28,11 +28,13 @@ export async function POST(request: NextRequest, context: any) {
     const body = await request.json()
     const userAddress = body.address || body.userAddress
     const amountPaid = Number(body.amountPaid || body.amount || 0)
+    const txHash = body.txHash || body.transactionHash || null
     if (!userAddress) return NextResponse.json({ error: "Missing address" }, { status: 400 })
 
-    await saveCourseEnrollmentToMongo({ userAddress, courseCode: code, amountPaid })
+    // Save as pending enrollment; owner will confirm on-chain later which will mark confirmed
+    await savePendingCourseEnrollmentToMongo({ userAddress, courseCode: code, amountPaid, txHash, status: "pending" })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, pending: true })
   } catch (error) {
     console.error("POST course enroll error:", error)
     return NextResponse.json({ error: "Failed to enroll" }, { status: 500 })

@@ -30,7 +30,6 @@ export default function RoleSelectionModal({ open, onOpenChange, onRoleSelect }:
           >
             <span className="text-2xl">👨‍🎓</span>
             <span className="font-semibold">Mentee</span>
-            <span className="text-xs text-muted-foreground">Learn and earn rewards</span>
           </Button>
           <Button
             onClick={() => handleRoleSelect("mentor")}
@@ -39,7 +38,6 @@ export default function RoleSelectionModal({ open, onOpenChange, onRoleSelect }:
           >
             <span className="text-2xl">👨‍🏫</span>
             <span className="font-semibold">Mentor</span>
-            <span className="text-xs text-muted-foreground">Create courses and earn</span>
           </Button>
         </div>
       </DialogContent>

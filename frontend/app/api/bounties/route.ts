@@ -2,6 +2,10 @@ import { getBountiesFromMongo, saveBountyToMongo } from "@/lib/mongodb"
 import { type NextRequest, NextResponse } from "next/server"
 import fs from "fs/promises"
 import path from "path"
+import { ethers } from "ethers"
+import { CONTRACT_ADDRESS } from "@/lib/smart-contracts"
+
+const RPC_URL = process.env.CELO_RPC_URL || process.env.RPC_URL || "https://forno.celo.org"
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,6 +34,8 @@ export async function POST(request: NextRequest) {
       const deadline = (form.get("deadline") as string) || ""
       const mentorAddress = (form.get("mentorAddress") as string) || ""
       const linkedCourse = (form.get("linkedCourse") as string) || undefined
+  const txHash = (form.get("txHash") as string) || null
+  const funded = (form.get("funded") as string) === "true" || false
       const requirementsRaw = (form.get("requirements") as string) || ""
 
       const files: string[] = []
@@ -56,9 +62,41 @@ export async function POST(request: NextRequest) {
         linkedCourse,
         requirements: requirementsRaw.split("\n").filter((r) => r.trim()),
         files,
+        txHash,
+        funded,
       }
     } else {
       bountyBody = await request.json()
+    }
+
+    // If a txHash was supplied, verify the on-chain funding transaction before marking funded
+    if (bountyBody.txHash) {
+      try {
+        const provider = new ethers.JsonRpcProvider(RPC_URL)
+        const tx = await provider.getTransaction(bountyBody.txHash)
+        if (!tx) {
+          console.warn("Bounty funding tx not found on-chain:", bountyBody.txHash)
+          // leave funded as provided (likely false)
+        } else {
+          // Ensure tx sent to our contract
+          if (tx.to && tx.to.toLowerCase() === CONTRACT_ADDRESS.toLowerCase()) {
+            // Compare value with expected prizePool (allow small tolerance)
+            const prizePoolWei = ethers.parseEther(String(bountyBody.prizePool || 0))
+            const sentWei = tx.value as bigint
+            // Accept if sentWei >= prizePoolWei (mentor may overfund slightly)
+            if (sentWei >= prizePoolWei) {
+              bountyBody.funded = true
+            } else {
+              console.warn("Bounty funding tx value mismatch", { sentWei: sentWei.toString(), prizePoolWei: prizePoolWei.toString() })
+              // keep funded false
+            }
+          } else {
+            console.warn("Bounty funding tx not sent to contract address", tx.to)
+          }
+        }
+      } catch (verErr) {
+        console.warn("Failed to verify bounty funding tx:", verErr)
+      }
     }
 
     const bounty = await saveBountyToMongo(bountyBody)

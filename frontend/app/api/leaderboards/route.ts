@@ -1,10 +1,37 @@
-import { getCoursesFromMongo } from "@/lib/mongodb"
+import { getCoursesFromMongo, connectToDatabase } from "@/lib/mongodb"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url)
+    const bountyCode = url.searchParams.get("bounty")
+
+    // If a bounty code is provided, return leaderboard for that bounty from registrations
+    if (bountyCode) {
+      const { db } = await connectToDatabase()
+      const regs = db.collection("bounty_registrations")
+      const rows = await regs.find({ bountyCode }).sort({ createdAt: -1 }).limit(50).toArray()
+
+      const entries = rows.map((r: any, idx: number) => ({
+        rank: idx + 1,
+        address: r.userAddress,
+        score: "-",
+        celo: `+${Number(r.amountPaid || 0).toFixed(3)} CELO`,
+        discount: r.isEnrolled ? "50% discount" : "No discount",
+      }))
+
+      return Response.json([
+        {
+          title: `Bounty ${bountyCode} Leaderboard`,
+          category: "Bounty",
+          entries,
+        },
+      ])
+    }
+
+    // fallback: course leaderboards as before
     const courses = await getCoursesFromMongo()
 
-    const leaderboards = courses.map((course) => ({
+  const leaderboards = courses.map((course: any) => ({
       title: `${course.title} Leaderboard`,
       category: course.category,
       entries: [

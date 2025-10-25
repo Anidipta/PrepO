@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react"
+import { useAccount } from "wagmi"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function RecentActivities() {
   const [activities, setActivities] = useState<any[]>([])
+  const { address } = useAccount()
 
   useEffect(() => {
     let mounted = true
     ;(async () => {
       try {
-        const res = await fetch(`/api/activities`)
+        const url = address ? `/api/activities?address=${address}` : `/api/activities`
+        const res = await fetch(url)
         const json = await res.json()
         if (res.ok && mounted) {
           setActivities(json.data || [])

@@ -24,7 +24,7 @@ export default function MenteeDashboard() {
   const stats = [
     { label: "Courses Joined", value: `${coursesCount}`, icon: "📚" },
     { label: "Quizzes Completed", value: "0", icon: "✓" },
-    { label: "CELO Earned", value: (balanceData?.formatted || "0"), icon: "💰" },
+    { label: "CELO Earned", value: balanceData?.formatted ? parseFloat(balanceData.formatted).toFixed(3) : "0.000", icon: "💰" },
     { label: "Available Bounties", value: `${bountiesCount}`, icon: "🏆" },
   ]
 

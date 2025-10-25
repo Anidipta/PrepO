@@ -55,6 +55,8 @@ contract PrepO {
     mapping(string => mapping(address => bool)) public bountyRegistrations; // bountyId => user => registered
     mapping(string => Registration[]) public courseRegistrationHistory;     // courseId => registrations
     mapping(string => Registration[]) public bountyRegistrationHistory;     // bountyId => registrations
+    // pending enrollments: courseId => user => amount paid (held in contract until owner confirms)
+    mapping(string => mapping(address => uint256)) public pendingEnrollments;
     
     // =====================================================================
     // EVENTS
@@ -78,6 +80,15 @@ contract PrepO {
     modifier onlyOwner() {
         require(msg.sender == platformOwner, "Only platform owner");
         _;
+    }
+
+    // Simple reentrancy guard
+    bool private locked = false;
+    modifier nonReentrant() {
+        require(!locked, "Reentrant call");
+        locked = true;
+        _;
+        locked = false;
     }
     
     // =====================================================================
@@ -121,34 +132,55 @@ contract PrepO {
      * @dev Enroll in a course
      * @param _courseId MongoDB course ID
      * User must send: course price + 0.005 CELO platform fee
-     * Distribution: course price goes to mentor, 0.005 CELO goes to platform owner
+     * Distribution: the paid amount is split on-chain: 80% to the mentor, remaining 20% to the platform owner
      */
     function enrollInCourse(string memory _courseId) external payable {
         Course memory course = courses[_courseId];
         require(course.exists, "Course does not exist");
         require(!courseEnrollments[_courseId][msg.sender], "Already enrolled");
-        
-        uint256 totalRequired = course.price + PLATFORM_FEE;
-        require(msg.value == totalRequired, "Incorrect payment amount");
-        
-        // Transfer course price to mentor
-        (bool mentorSuccess, ) = payable(course.mentor).call{value: course.price}("");
-        require(mentorSuccess, "Transfer to mentor failed");
-        
-        // Transfer platform fee to platform owner
-        (bool ownerSuccess, ) = payable(platformOwner).call{value: PLATFORM_FEE}("");
-        require(ownerSuccess, "Platform fee transfer failed");
-        
-        // Record enrollment
-        courseEnrollments[_courseId][msg.sender] = true;
+
+        // Accept payment >= course.price. Hold funds in contract until owner confirmation.
+        require(msg.value >= course.price, "Insufficient payment amount");
+
+        // Store pending enrollment amount (escrow)
+        pendingEnrollments[_courseId][msg.sender] = msg.value;
+
+        emit CourseEnrollment(_courseId, msg.sender, msg.value, PLATFORM_FEE);
+    }
+
+    /**
+     * @dev Owner confirms enrollment and releases funds to mentor/platform
+     * This performs the 80/20 split: 80% to mentor, 20% to platform owner
+     */
+    function confirmEnrollment(string memory _courseId, address _student) external onlyOwner nonReentrant {
+        uint256 amount = pendingEnrollments[_courseId][_student];
+        require(amount > 0, "No pending enrollment for student");
+
+        Course memory course = courses[_courseId];
+        require(course.exists, "Course does not exist");
+
+        // Effects: clear pending and mark enrolled
+        pendingEnrollments[_courseId][_student] = 0;
+        courseEnrollments[_courseId][_student] = true;
+
+        // Record enrollment history
         courseRegistrationHistory[_courseId].push(Registration({
-            user: msg.sender,
-            amountPaid: msg.value,
+            user: _student,
+            amountPaid: amount,
             timestamp: block.timestamp
         }));
-        
-        emit CourseEnrollment(_courseId, msg.sender, msg.value, PLATFORM_FEE);
-        emit PlatformFeeCollected(msg.sender, PLATFORM_FEE);
+
+        // Interactions: transfer funds
+        uint256 mentorShare = (amount * 80) / 100;
+        uint256 platformShare = amount - mentorShare;
+
+        (bool mentorSuccess, ) = payable(course.mentor).call{value: mentorShare}("");
+        require(mentorSuccess, "Transfer to mentor failed");
+
+        (bool ownerSuccess, ) = payable(platformOwner).call{value: platformShare}("");
+        require(ownerSuccess, "Platform fee transfer failed");
+
+        emit PlatformFeeCollected(_student, PLATFORM_FEE);
     }
     
     // =====================================================================
@@ -207,26 +239,30 @@ contract PrepO {
         
         bool isEnrolled = courseEnrollments[_courseId][msg.sender];
         uint256 entryFee;
-        
+
         if (isEnrolled) {
-            // 80% discount: pay only 20% of entry fee
-            entryFee = (bounty.entryFee * 20) / 100;
+            // 50% discount for enrolled students
+            entryFee = (bounty.entryFee * 50) / 100;
         } else {
             // Full entry fee
             entryFee = bounty.entryFee;
         }
-        
+
         uint256 totalRequired = entryFee + PLATFORM_FEE;
         require(msg.value == totalRequired, "Incorrect payment amount");
-        
-        // Transfer entry fee to mentor
-        (bool mentorSuccess, ) = payable(bounty.mentor).call{value: entryFee}("");
-        require(mentorSuccess, "Transfer to mentor failed");
-        
-        // Transfer platform fee to platform owner
-        (bool ownerSuccess, ) = payable(platformOwner).call{value: PLATFORM_FEE}("");
+
+        // Allocate 90% of entry fee to prize pool, 10% to platform owner (immediate)
+        uint256 toPrize = (entryFee * 90) / 100;
+        uint256 platformCut = entryFee - toPrize; // 10%
+
+        // Update prize pool
+        bounties[_bountyId].prizePool += toPrize;
+
+        // Transfer platform portion (10% of entry fee + platform fee)
+        uint256 platformTotal = platformCut + PLATFORM_FEE;
+        (bool ownerSuccess, ) = payable(platformOwner).call{value: platformTotal}("");
         require(ownerSuccess, "Platform fee transfer failed");
-        
+
         // Record registration
         bountyRegistrations[_bountyId][msg.sender] = true;
         bountyRegistrationHistory[_bountyId].push(Registration({
@@ -234,7 +270,7 @@ contract PrepO {
             amountPaid: msg.value,
             timestamp: block.timestamp
         }));
-        
+
         emit BountyRegistration(_bountyId, msg.sender, msg.value, PLATFORM_FEE, isEnrolled);
         emit PlatformFeeCollected(msg.sender, PLATFORM_FEE);
     }

@@ -214,6 +214,64 @@ export async function saveCourseEnrollmentToMongo(data: {
   }
 }
 
+// Save a pending enrollment (student paid on-chain, awaiting owner confirmation)
+export async function savePendingCourseEnrollmentToMongo(data: {
+  userAddress: string
+  courseCode: string
+  amountPaid: number
+  txHash?: string
+  status?: "pending" | "confirmed"
+  createdAt?: Date
+}) {
+  try {
+    const { db } = await connectToDatabase()
+    const regs = db.collection("course_registrations")
+
+    const doc = {
+      ...data,
+      status: data.status || "pending",
+      createdAt: data.createdAt || new Date(),
+    }
+
+    const result = await regs.insertOne(doc)
+    return { ...doc, _id: result.insertedId }
+  } catch (err) {
+    console.error("Error saving pending course enrollment:", err)
+    throw err
+  }
+}
+
+// Confirm a pending enrollment (called after owner on-chain confirmation)
+export async function confirmCourseEnrollmentInMongo(data: {
+  userAddress: string
+  courseCode: string
+  amountPaid: number
+  txHash?: string
+}) {
+  try {
+    const { db } = await connectToDatabase()
+    const regs = db.collection("course_registrations")
+    const courses = db.collection(COURSES_COLLECTION)
+
+    // Find a pending registration for this user/course
+    const existing = await regs.findOne({ userAddress: data.userAddress, courseCode: data.courseCode, status: "pending" })
+    if (existing) {
+      await regs.updateOne({ _id: existing._id }, { $set: { status: "confirmed", txHash: data.txHash || existing.txHash, amountPaid: data.amountPaid, confirmedAt: new Date() } })
+    } else {
+      // Insert a confirmed record if none existed
+      await regs.insertOne({ ...data, status: "confirmed", createdAt: new Date(), confirmedAt: new Date() })
+    }
+
+    // increment enrollments count on course
+    await courses.updateOne({ code: data.courseCode }, { $inc: { enrollments: 1 }, $set: { updatedAt: new Date() } })
+
+    return { success: true }
+  } catch (err) {
+    console.error("Error confirming course enrollment:", err)
+    throw err
+  }
+}
+
 export async function deleteCourseFromMongo(code: string) {
   try {
     const { db } = await connectToDatabase()
@@ -312,12 +370,18 @@ export async function saveBountyToMongo(bountyData: {
     const { db } = await connectToDatabase()
     const collection = db.collection(BOUNTIES_COLLECTION)
 
+    // Allow caller to provide a code (client-generated) or create one server-side
+    const code = (bountyData as any).code || generateUniqueCode()
+
     const bountyWithCode = {
       ...bountyData,
-      code: generateUniqueCode(),
+      code,
       createdAt: bountyData.createdAt || new Date(),
       entries: 0,
       status: "Active",
+      // mark whether the bounty prizePool has been funded on-chain
+      funded: !!(bountyData as any).funded || false,
+      txHash: (bountyData as any).txHash || null,
     }
 
     const result = await collection.insertOne(bountyWithCode)
@@ -325,6 +389,44 @@ export async function saveBountyToMongo(bountyData: {
   } catch (error) {
     console.error("Error saving bounty to MongoDB:", error)
     throw error
+  }
+}
+
+/**
+ * Save a bounty registration (participant entering a bounty)
+ */
+export async function saveBountyRegistrationToMongo(data: {
+  bountyCode: string
+  userAddress: string
+  amountPaid: number
+  txHash?: string
+  isEnrolled?: boolean
+  createdAt?: Date
+}) {
+  try {
+    const { db } = await connectToDatabase()
+    const regs = db.collection("bounty_registrations")
+    const bounties = db.collection(BOUNTIES_COLLECTION)
+
+    const doc = {
+      ...data,
+      createdAt: data.createdAt || new Date(),
+    }
+
+    await regs.insertOne(doc)
+
+    // Update bounty entries count
+    await bounties.updateOne({ code: data.bountyCode }, { $inc: { entries: 1 }, $set: { updatedAt: new Date() } })
+
+    // Update prizePool locally: approximate 90% of the entry fee goes to prize pool
+    const entryFee = data.amountPaid - 0.005 // subtract platform fee (approx)
+    const toPrize = Math.max(0, entryFee * 0.9)
+    await bounties.updateOne({ code: data.bountyCode }, { $inc: { prizePool: toPrize } })
+
+    return { ...doc }
+  } catch (err) {
+    console.error("Error saving bounty registration:", err)
+    throw err
   }
 }
 

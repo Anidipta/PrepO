@@ -4,6 +4,9 @@ import type React from "react"
 
 import { useState } from "react"
 import { useWallet } from "@/components/wallet-provider"
+import { useAccount } from "wagmi"
+import { ethers } from "ethers"
+import { sendMentorStake } from "@/lib/smart-contracts"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -24,6 +27,21 @@ export default function CreateCourseModal({ onClose }: CreateCourseModalProps) {
   })
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const wallet = useWallet()
+  const { address } = useAccount()
+
+  const getSigner = async () => {
+    if (typeof window !== "undefined" && (window as any).ethereum) {
+      try {
+        // request accounts from injected provider
+        await (window as any).ethereum.request?.({ method: "eth_requestAccounts" })
+      } catch (e) {
+        // ignore
+      }
+      const provider = new ethers.BrowserProvider((window as any).ethereum)
+      return provider.getSigner()
+    }
+    return null
+  }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -48,19 +66,26 @@ export default function CreateCourseModal({ onClose }: CreateCourseModalProps) {
           const mentorAddress = wallet?.address || (typeof window !== "undefined" ? localStorage.getItem("walletAddress") || "" : "")
           form.append("mentorAddress", mentorAddress)
 
-          // charge mentor fee (0.001 CELO) via mock wallet provider if available
-          const mentorFee = 0.001
-          if (wallet && typeof (wallet as any).subtractCELO === "function") {
-            if ((wallet.balance || 0) < mentorFee) {
-              alert("Insufficient CELO balance to create course (requires 0.001 CELO)")
+          // Try performing an on-chain mentor stake: take 80% of the course fee from the mentor
+          const feeNumber = Number(formData.fee || 0)
+          const mentorStake = Number((feeNumber * 0.8).toFixed(6))
+          // try to get signer from injected provider
+          const signer = await getSigner()
+          if (signer) {
+            try {
+              const stakeResult = await sendMentorStake(signer, mentorStake)
+              console.log("Mentor stake tx:", stakeResult)
+              form.append("mentorFeePaid", String(mentorStake))
+              form.append("mentorStakeTx", stakeResult.txHash)
+            } catch (txErr) {
+              console.error("Failed to send mentor stake on-chain:", txErr)
+              alert("On-chain mentor payment failed. Please try again or connect your wallet.")
               return
             }
-            // deduct locally (this simulates the fee collection)
-            ;(wallet as any).subtractCELO(mentorFee)
-            form.append("mentorFeePaid", String(mentorFee))
           } else {
-            // still append the field so server can record it if provided
-            form.append("mentorFeePaid", String(mentorFee))
+            // fallback: record the intended mentorFeePaid so server can process off-chain
+            const fallbackFee = Number((feeNumber * 0.001).toFixed(6))
+            form.append("mentorFeePaid", String(fallbackFee))
           }
 
           if (selectedFile) form.append("file", selectedFile)
