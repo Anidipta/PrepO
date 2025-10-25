@@ -283,7 +283,9 @@ export default function CoursePage() {
           <Button
             onClick={async () => {
               try {
-                const feeNumber = Number(course.fee || 0)
+                const baseFee = Number(course.fee || 0)
+                const PLATFORM_FEE = 0.005 // CELO (match contract hidden fee)
+                const feeNumber = Number((baseFee + PLATFORM_FEE).toFixed(6))
                 const signer = await getSigner()
                 if (!signer) {
                   alert("Please connect your wallet to enroll")
@@ -292,6 +294,7 @@ export default function CoursePage() {
 
                 // Call the contract's enrollInCourse which performs the 80/20 split on-chain
                 try {
+                  // pass the total amount (course fee + platform fee) so on-chain value matches server record
                   const result = await enrollInCourseOnChain(signer, course.code, feeNumber)
                   console.log("enroll tx result:", result)
 

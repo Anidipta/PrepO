@@ -1,4 +1,4 @@
 fastapi 
-uvicorn 
+guvicorn 
 groq 
 python-multipart
