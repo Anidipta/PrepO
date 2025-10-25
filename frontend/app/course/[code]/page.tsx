@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useAccount } from "wagmi"
-import { CONTRACT_ADDRESS, enrollInCourseOnChain } from "@/lib/smart-contracts"
+import { CONTRACT_ADDRESS, enrollInCourseOnChain, PLATFORM_FEE } from "@/lib/smart-contracts"
 import { ethers } from "ethers"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ export default function CoursePage() {
   const [progress, setProgress] = useState<any>(null)
   const [pendingTx, setPendingTx] = useState<string | null>(null)
   const [pendingStatus, setPendingStatus] = useState<string | null>(null)
+  const [isProcessing, setIsProcessing] = useState(false)
   const { address: connectedAddress } = useAccount()
 
   // Poll registration status when there's a pending tx
@@ -281,55 +282,112 @@ export default function CoursePage() {
         {/* Enroll Button */}
         {!enrolled && (
           <Button
+            disabled={isProcessing || enrolled}
             onClick={async () => {
+              // Clear previous state
               try {
                 const baseFee = Number(course.fee || 0)
-                const PLATFORM_FEE = 0.005 // CELO (match contract hidden fee)
-                const feeNumber = Number((baseFee + PLATFORM_FEE).toFixed(6))
-                const signer = await getSigner()
-                if (!signer) {
-                  alert("Please connect your wallet to enroll")
+                const totalAmount = Number((baseFee + PLATFORM_FEE).toFixed(6))
+
+                const proceed = window.confirm(`You will be charged ${totalAmount} CELO to enroll in ${course.title}. Proceed to wallet confirmation?`)
+                if (!proceed) return
+
+                if (!(window as any).ethereum) {
+                  alert("No web3 wallet detected in the browser. Please install MetaMask or a compatible wallet.")
                   return
                 }
 
-                // Call the contract's enrollInCourse which performs the 80/20 split on-chain
+                setIsProcessing(true)
+
+                // Prompt wallet to connect accounts (this will open MetaMask/account selector)
+                const eth = (window as any).ethereum
+                if (!eth) {
+                  alert("No web3 wallet detected in the browser. Please install MetaMask or a compatible wallet.")
+                  setIsProcessing(false)
+                  return
+                }
+
                 try {
-                  // pass the total amount (course fee + platform fee) so on-chain value matches server record
-                  const result = await enrollInCourseOnChain(signer, course.code, feeNumber)
+                  // Try common wallet connection methods in order
+                  if (typeof eth.request === "function") {
+                    await eth.request({ method: "eth_requestAccounts" })
+                  } else if (typeof eth.send === "function") {
+                    // some providers implement send
+                    await eth.send("eth_requestAccounts", [])
+                  } else if (typeof eth.enable === "function") {
+                    // legacy
+                    await eth.enable()
+                  } else {
+                    // last resort: use ethers provider send
+                    const tmpProvider = new ethers.BrowserProvider(eth)
+                    await tmpProvider.send("eth_requestAccounts", [])
+                  }
+                } catch (e: any) {
+                  console.error("Wallet connection failed:", e)
+                  // Show a helpful message and stop processing instead of letting extension error bubble up
+                  const msg = e?.message || String(e)
+                  alert("Wallet connection failed: " + msg + ". Please retry or try a different wallet extension.")
+                  setIsProcessing(false)
+                  return
+                }
+
+                // Create signer and call contract which will open the tx confirmation (value shown in wallet)
+                const provider = new ethers.BrowserProvider((window as any).ethereum)
+                const signer = await provider.getSigner()
+
+                try {
+                  const result = await enrollInCourseOnChain(signer, course.code, totalAmount)
                   console.log("enroll tx result:", result)
 
-                  // Get student address from signer to ensure correct from
                   const studentAddress = await signer.getAddress()
 
                   // Record enrollment server-side (save txHash for reference)
                   const res = await fetch(`/api/courses/${course.code}`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ userAddress: studentAddress, amountPaid: feeNumber, txHash: result.txHash }),
+                    body: JSON.stringify({ userAddress: studentAddress, amountPaid: totalAmount, txHash: result.txHash }),
                   })
                   const j = await res.json().catch(() => ({}))
                   if (!res.ok) {
                     throw new Error(j?.error || "Failed to record enrollment on server")
                   }
 
-                  // show pending tx and status
                   setPendingTx(result.txHash)
                   setPendingStatus("pending")
                   setEnrolled(true)
-                  // Don't alert that mentor received funds — wait for owner confirmation
+
                   alert("Enrollment submitted on-chain. Waiting for platform confirmation (owner). Transaction: " + result.txHash)
+
+                  // Live update: wait for the transaction to be mined (included in a block)
+                  try {
+                    const liveProvider = new ethers.BrowserProvider((window as any).ethereum)
+                    // waitForTransaction resolves when the tx is mined (1 confirmation)
+                    liveProvider.waitForTransaction(result.txHash).then((receipt) => {
+                      if (receipt) {
+                        setPendingStatus("mined")
+                      }
+                    }).catch((e) => {
+                      console.warn("waitForTransaction error", e)
+                      setPendingStatus("error")
+                    })
+                  } catch (e) {
+                    console.warn("Live tx monitoring not available", e)
+                  }
                 } catch (err) {
                   console.error("Enroll/payment error:", err)
                   alert("Enrollment failed: " + (err as any)?.message)
+                } finally {
+                  setIsProcessing(false)
                 }
               } catch (err) {
                 console.error("Enroll error:", err)
                 alert("Enrollment failed: " + (err as any)?.message)
+                setIsProcessing(false)
               }
             }}
             className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
           >
-            Enroll Now - {course.fee} CELO
+            {isProcessing ? `Processing — confirm in wallet` : `Enroll Now - ${course.fee} CELO`}
           </Button>
         )}
         {/* Pending enrollment banner */}

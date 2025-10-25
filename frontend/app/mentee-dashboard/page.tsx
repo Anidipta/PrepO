@@ -20,10 +20,11 @@ export default function MenteeDashboard() {
   const [userName, setUserName] = useState<string | null>(null)
   const [coursesCount, setCoursesCount] = useState<number>(0)
   const [bountiesCount, setBountiesCount] = useState<number>(0)
+  const [quizzesCompleted, setQuizzesCompleted] = useState<number>(0)
 
   const stats = [
     { label: "Courses Joined", value: `${coursesCount}`, icon: "📚" },
-    { label: "Quizzes Completed", value: "0", icon: "✓" },
+    { label: "Quizzes Completed", value: `${quizzesCompleted}`, icon: "✓" },
     { label: "CELO Earned", value: balanceData?.formatted ? parseFloat(balanceData.formatted).toFixed(3) : "0.000", icon: "💰" },
     { label: "Available Bounties", value: `${bountiesCount}`, icon: "🏆" },
   ]
@@ -278,7 +279,12 @@ export default function MenteeDashboard() {
               </Tabs>
 
               {/* Quiz Upload Modal */}
-              {showQuizUpload && <QuizInterface onClose={() => setShowQuizUpload(false)} />}
+              {showQuizUpload && (
+                <QuizInterface
+                  onClose={() => setShowQuizUpload(false)}
+                  onComplete={() => setQuizzesCompleted((n) => n + 1)}
+                />
+              )}
             </main>
           </div>
         </div>

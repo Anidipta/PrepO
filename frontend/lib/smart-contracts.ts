@@ -119,10 +119,11 @@ import { ethers, Signer } from "ethers"
 
 export const CONTRACT_ADDRESS = "0x0BC8dCb2c6F6AA1dFD236c985241dad86C6593DF"
 
-/**
- * Send a stake/payment from mentor to the deployed contract address.
- * mentorStakeCELO: number in CELO
- */
+// Platform fee (in CELO) used by frontend to display and include in payments when required
+export const PLATFORM_FEE = 0.005
+// Platform owner address (receives platform fees / payouts)
+export const PLATFORM_OWNER = "0x11C46CB90A9DE1E2191b6545A91Ae67F6eC1Cb98"
+
 export async function sendMentorStake(signer: Signer, mentorStakeCELO: number) {
   if (!signer) throw new Error("No signer provided")
   const value = ethers.parseEther(String(mentorStakeCELO))

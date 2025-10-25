@@ -1,16 +1,3 @@
-import { NextResponse } from "next/server"
-import { savePdfAnalysisToMongo, saveGeneratedQuizToMongo } from "@/lib/mongodb"
-import Groq from "groq-sdk"
-import fs from "fs/promises"
-import path from "path"
-
-const GROQ_API_KEY = process.env.GROQ_API_KEY || process.env.AI_API_KEY || "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"
-const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile"
-
-if (!GROQ_API_KEY) {
-  console.warn("GROQ_API_KEY is not set. AI calls will fail until configured.")
-}
-
 export async function POST(request: Request) {
   try {
     const form = await request.formData()
@@ -38,93 +25,52 @@ export async function POST(request: Request) {
     await fs.writeFile(filePath, buffer)
     const fileUrl = `/files/${safeName}`
 
-    // Convert to base64 for model input
-    const base64 = buffer.toString("base64")
+    // Forward the uploaded file to the external AI service
+    const AI_URL = process.env.AI_SERVICE_URL || "https://prepo-ai.onrender.com/api/analyze-pdf"
 
-    // Build a concise prompt asking Groq to return strict JSON
-    const prompt = `You are an assistant that analyzes PDF documents.
-The PDF content is provided as base64 below. Extract the key information and return ONLY valid JSON with this exact structure:
-{
-  "summary": "A 2-3 sentence summary of the document",
-  "bullets": ["Key point 1", "Key point 2", "Key point 3", "Key point 4"]
-}
+    // Build form data to send to external AI service
+    const externalForm = new FormData()
+    externalForm.append("file", file as unknown as Blob, file?.name || safeName)
+    if (address) externalForm.append("address", address)
 
-Do NOT include any other text, explanation, or markdown formatting. Return ONLY the JSON object.
-
-File name: ${file.name || safeName}
-Base64 content: ${base64.substring(0, 50000)}`
-
-    // Initialize Groq client
-    const groqClient = new Groq({ 
-      apiKey: GROQ_API_KEY 
-    })
-
-    const completion = await groqClient.chat.completions.create({
-      model: GROQ_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 2048,
-      temperature: 0.3,
-      response_format: { type: "json_object" }
-    })
-
-    const text = completion?.choices?.[0]?.message?.content || ""
-
-    // Parse AI response as JSON
-    let result: { summary: string; bullets: string[]; quiz?: any } | null = null
-    
-    try {
-      result = JSON.parse(text)
-    } catch (e) {
-      // Try to extract JSON from response
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        try {
-          result = JSON.parse(jsonMatch[0])
-        } catch (e2) {
-          console.error("Failed to parse JSON from AI response:", e2)
-        }
-      }
+    const aiResp = await fetch(AI_URL, { method: "POST", body: externalForm })
+    if (!aiResp.ok) {
+      const txt = await aiResp.text().catch(() => "")
+      console.error("AI service returned error:", aiResp.status, txt)
+      return NextResponse.json({ error: "AI service error", details: txt }, { status: 502 })
     }
 
-    if (!result || !result.summary || !result.bullets) {
-      console.error("Invalid AI response format:", text)
-      return NextResponse.json({ 
-        error: "AI returned invalid response format", 
-        raw: text.substring(0, 500) 
-      }, { status: 502 })
+    const aiJson = await aiResp.json().catch(() => null)
+    if (!aiJson || !aiJson.success || !aiJson.data) {
+      console.error("Invalid AI response:", aiJson)
+      return NextResponse.json({ error: "Invalid AI response" }, { status: 502 })
     }
 
-    const { summary, bullets, quiz } = result
+    const { summary, bullets, quiz, fileUrl: remoteFileUrl } = aiJson.data
 
-    // Persist analysis with file URL
-    await savePdfAnalysisToMongo({ 
-      userAddress: address, 
-      fileName: file.name || safeName, 
-      fileUrl, 
-      summary, 
-      bullets, 
-      quiz: quiz || null 
+    // Persist analysis with file URL. Prefer remote fileUrl returned by AI service if present,
+    // otherwise use the locally saved `fileUrl`.
+    const storedFileUrl = remoteFileUrl || fileUrl
+    await savePdfAnalysisToMongo({
+      userAddress: address,
+      fileName: file.name || safeName,
+      fileUrl: storedFileUrl,
+      summary,
+      bullets,
+      quiz: quiz || null,
     })
 
     // Save quiz if present
     if (quiz) {
-      await saveGeneratedQuizToMongo({ 
-        userAddress: address, 
-        fileName: file.name || safeName, 
-        fileUrl, 
-        quiz 
+      await saveGeneratedQuizToMongo({
+        userAddress: address,
+        fileName: file.name || safeName,
+        fileUrl: storedFileUrl,
+        quiz,
       })
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      data: { 
-        summary, 
-        bullets, 
-        quiz: quiz || null, 
-        fileUrl 
-      } 
-    })
+    return NextResponse.json({ success: true, data: { summary, bullets, quiz: quiz || null, fileUrl: storedFileUrl, address } })
     
   } catch (err) {
     console.error("PDF processing error:", err)

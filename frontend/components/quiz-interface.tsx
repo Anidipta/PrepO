@@ -3,12 +3,15 @@
 import type React from "react"
 
 import { useState } from "react"
+import { ethers } from "ethers"
+import { PLATFORM_OWNER } from "@/lib/smart-contracts"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 interface QuizInterfaceProps {
   onClose: () => void
+  onComplete?: (result: { correct: number; incorrect: number; total: number }) => void
 }
 
 export default function QuizInterface({ onClose }: QuizInterfaceProps) {
@@ -16,6 +19,8 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
   const [fileName, setFileName] = useState("")
   const [loading, setLoading] = useState(false)
   const [analysis, setAnalysis] = useState<{ summary?: string; bullets?: string[]; quiz?: any } | null>(null)
+  const [answers, setAnswers] = useState<number[]>([])
+  const [result, setResult] = useState<{ correct: number; incorrect: number; total: number } | null>(null)
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -52,10 +57,82 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
       }
 
       setAnalysis(json.data || null)
+      // initialize answers array for interactivity
+      const qcount = (json.data?.quiz?.questions || []).length
+      setAnswers(new Array(qcount).fill(-1))
       setStage("preview")
     } catch (error) {
       console.error("[v1] Error generating quiz:", error)
-      alert("Failed to generate quiz - ensure AI_API_URL and AI_API_KEY are configured on the server.")
+      console.error("AI generation failed, falling back to sample quiz")
+      // If AI fails, load a fallback quiz (provided by user) so mentee can still take the quiz
+      const fallback = [
+        {
+          question: "What is the name of the company that presented Drivelink?",
+          options: ["A) Drivelink Ltd.", "B) ApnaDriver", "C) InstaDrive Secure", "D) Kolkata Cabs"],
+          answer: "B) ApnaDriver",
+        },
+        {
+          question: "In which city is Drivelink launching its service first?",
+          options: ["A) Mumbai", "B) Delhi", "C) Bangalore", "D) Kolkata"],
+          answer: "D) Kolkata",
+        },
+        {
+          question: "What is the primary problem Drivelink aims to solve?",
+          options: [
+            "A) The high cost of buying a new car.",
+            "B) The frustration of finding a verified driver for one's *own* car.",
+            "C) The lack of ride-hailing apps like Uber.",
+            "D) The high commission rates for taxi drivers.",
+          ],
+          answer: "B) The frustration of finding a verified driver for one's *own* car.",
+        },
+        {
+          question: "How can users book a driver through Drivelink?",
+          options: ["A) Only via a mobile app", "B) Only by calling a hotline", "C) Through the app or by sending a WhatsApp message", "D) By visiting an offline agency"],
+          answer: "C) Through the app or by sending a WhatsApp message",
+        },
+        {
+          question: "According to the business model, what is the planned monthly subscription fee for high-volume drivers?",
+          options: ["A) ₹199/month", "B) ₹299/month", "C) ₹499/month", "D) ₹799/month"],
+          answer: "C) ₹499/month",
+        },
+        {
+          question: "What is Drivelink's funding ask?",
+          options: ["A) ₹20 Lakhs for 35% equity", "B) ₹35 Lakhs for 20% equity", "C) ₹50 Lakhs for 10% equity", "D) ₹1 Crore for 15% equity"],
+          answer: "B) ₹35 Lakhs for 20% equity",
+        },
+        {
+          question: "What is a key unique feature Drivelink offers compared to Ola/Uber?",
+          options: ["A) It allows users to hire a driver for their *own* vehicle.", "B) It has a mobile app.", "C) It offers instant booking.", "D) It is available in Kolkata."],
+          answer: "A) It allows users to hire a driver for their *own* vehicle.",
+        },
+        {
+          question: "What goal does Drivelink aim to achieve in Phase 2 (6-18 months) of its GTM strategy?",
+          options: ["A) Launch the app beta", "B) Achieve 100+ daily bookings in Kolkata", "C) Expand to all major Indian cities", "D) Achieve profitability"],
+          answer: "B) Achieve 100+ daily bookings in Kolkata",
+        },
+        {
+          question: "How many freelance drivers were onboarded for the MVP pilot as part of 'Key Early Wins'?",
+          options: ["A) 10", "B) 20", "C) 50", "D) 100"],
+          answer: "B) 20",
+        },
+        {
+          question: "What is the projected timeframe to reach profitability?",
+          options: ["A) 6-12 months", "B) 12-18 months", "C) 18-24 months post-launch", "D) 36 months"],
+          answer: "C) 18-24 months post-launch",
+        },
+      ]
+
+      // normalize fallback into analysis format
+      const normalized = {
+        summary: "Fallback quiz loaded — AI analysis not available.",
+        bullets: [],
+        quiz: { questions: fallback.map((q: any) => ({ prompt: q.question, options: q.options, correct: q.answer })) },
+      }
+
+      setAnalysis(normalized)
+      setAnswers(new Array(normalized.quiz.questions.length).fill(-1))
+      setStage("preview")
     } finally {
       setLoading(false)
     }
@@ -64,9 +141,103 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
   const handlePublish = async () => {
     setLoading(true)
     try {
-      // Simulate publishing
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const questions = (analysis?.quiz?.questions || []) as any[]
+      let correct = 0
+      let incorrect = 0
+      for (let i = 0; i < questions.length; i++) {
+        const q = questions[i]
+        const selected = answers[i]
+        if (selected == null || selected < 0) {
+          incorrect++
+          continue
+        }
+
+        // Determine correct index
+        let correctIndex = -1
+        if (typeof q.correct === "number") correctIndex = q.correct
+        else if (typeof q.correct === "string") correctIndex = (q.options || []).findIndex((o: string) => o.trim() === q.correct.trim())
+        else if (typeof q.correct_answer === "number") correctIndex = q.correct_answer
+        else if (typeof q.correct_answer === "string") correctIndex = (q.options || []).findIndex((o: string) => o.trim() === q.correct_answer.trim())
+
+        if (selected === correctIndex) correct++
+        else incorrect++
+      }
+
+      const rewardPer = 0.02
+      const total = Number(((correct - incorrect) * rewardPer).toFixed(6))
+
+      const savedAddress = localStorage.getItem("walletAddress") || ""
+      const proceed = window.confirm(
+        `You answered ${questions.length} questions. Correct: ${correct}, Incorrect: ${incorrect}.\nTotal change: ${total} CELO (each correct +0.02, wrong -0.02).\nClick OK to proceed.`
+      )
+      if (!proceed) return
+
+      // If total < 0: mentee must pay owner -> open MetaMask to send CELO to owner
+      if (total < 0) {
+        try {
+          if (!(window as any).ethereum) throw new Error("No web3 wallet detected")
+          const provider = new ethers.BrowserProvider((window as any).ethereum)
+          await (window as any).ethereum.request?.({ method: "eth_requestAccounts" })
+          const signer = await provider.getSigner()
+          const amount = Math.abs(total)
+          const tx = await signer.sendTransaction({ to: PLATFORM_OWNER, value: ethers.parseEther(String(amount)) })
+          await tx.wait()
+          try {
+            const { transactionLogger } = await import("@/lib/transaction-logger")
+            transactionLogger.logTransaction({
+              type: "quiz_reward",
+              from: savedAddress,
+              to: PLATFORM_OWNER,
+              amount: amount,
+              description: `Quiz penalty: ${incorrect}/${questions.length}`,
+              transactionHash: tx.hash,
+              status: "completed",
+            })
+          } catch (e) {
+            console.warn("Failed to log tx", e)
+          }
+        } catch (e) {
+          console.error("On-chain payment failed:", e)
+          alert("Payment failed: " + (e as any)?.message)
+        }
+      } else {
+        // total >= 0: mentee earned CELO. We cannot send from owner from the mentee's wallet.
+        // Create a payout request on the server so the owner can process the payment.
+        try {
+          const res = await fetch(`/api/ai/quiz-result`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userAddress: savedAddress, correct, incorrect, amount: total }),
+          })
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}))
+            throw new Error(j?.error || "Failed to request payout")
+          }
+          try {
+            const { transactionLogger } = await import("@/lib/transaction-logger")
+            transactionLogger.logTransaction({
+              type: "quiz_reward",
+              from: "platform_pending",
+              to: savedAddress,
+              amount: total,
+              description: `Quiz reward (pending owner): ${correct}/${questions.length}`,
+              transactionHash: "pending",
+              status: "pending",
+            })
+          } catch (e) {
+            console.warn("Failed to log payout request", e)
+          }
+        } catch (e) {
+          console.error("Payout request failed", e)
+          alert("Failed to request payout: " + (e as any)?.message)
+        }
+      }
+
+      setResult({ correct, incorrect, total })
       setStage("confirmation")
+      if (typeof props?.onComplete === "function") {
+        try { props.onComplete({ correct, incorrect, total }) } catch (e) {}
+      }
     } catch (error) {
       console.error("[v0] Error publishing quiz:", error)
     } finally {
@@ -171,12 +342,22 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
                       <div key={idx} className="p-4 bg-muted/30 rounded-lg mb-3">
                         <p className="font-semibold text-foreground mb-2">{q.prompt}</p>
                         <div className="space-y-2">
-                          {(q.options || []).map((opt: string, oi: number) => (
-                            <label key={oi} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                              <input type="radio" name={`q${idx}`} className="w-4 h-4" />
-                              {opt}
-                            </label>
-                          ))}
+                              {(q.options || []).map((opt: string, oi: number) => (
+                                <label key={oi} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name={`q${idx}`}
+                                    className="w-4 h-4"
+                                    checked={answers[idx] === oi}
+                                    onChange={() => {
+                                      const copy = [...answers]
+                                      copy[idx] = oi
+                                      setAnswers(copy)
+                                    }}
+                                  />
+                                  {opt}
+                                </label>
+                              ))}
                         </div>
                       </div>
                     ))}
@@ -209,22 +390,24 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
         {stage === "confirmation" && (
           <div className="space-y-6 text-center">
             <div className="text-6xl mb-4 animate-bounce">🎉</div>
-            <h3 className="text-2xl font-bold gradient-text">Quiz Published!</h3>
-            <p className="text-muted-foreground">
-              Your quiz has been successfully created and published. Students can now take it and earn XP rewards.
-            </p>
+            <h3 className="text-2xl font-bold gradient-text">Quiz Complete</h3>
+            <p className="text-muted-foreground">Review your result below. You may now confirm to record the outcome.</p>
 
             <Card className="glass-effect border-primary/20 bg-primary/5">
               <CardContent className="pt-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-sm text-muted-foreground">Questions</p>
-                    <p className="text-2xl font-bold text-primary">3</p>
+                    <p className="text-sm text-muted-foreground">Correct</p>
+                    <p className="text-2xl font-bold text-primary">{result?.correct ?? 0}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">XP Reward</p>
-                    <p className="text-2xl font-bold text-secondary">50 XP</p>
+                    <p className="text-sm text-muted-foreground">Incorrect</p>
+                    <p className="text-2xl font-bold text-secondary">{result?.incorrect ?? 0}</p>
                   </div>
+                </div>
+                <div className="mt-4">
+                  <p className="text-sm text-muted-foreground">Celo Change</p>
+                  <p className="text-2xl font-bold text-foreground">{result?.total ?? 0} CELO</p>
                 </div>
               </CardContent>
             </Card>
