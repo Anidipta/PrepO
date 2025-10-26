@@ -76,11 +76,13 @@ export async function saveUserToMongo(userData: {
     const { db } = await connectToDatabase()
     const collection = db.collection(USERS_COLLECTION)
 
+    // Normalize address to lowercase for consistent lookups
+    const normalized = { ...userData, address: userData.address.toLowerCase() }
     const result = await collection.updateOne(
-      { address: userData.address },
+      { address: normalized.address },
       {
         $set: {
-          ...userData,
+          ...normalized,
           updatedAt: new Date(),
         },
       },
@@ -100,7 +102,8 @@ export async function getUserFromMongo(address: string) {
     const collection = db.collection(USERS_COLLECTION)
 
     // find all users with this address (cleanup duplicates if present)
-    const users = await collection.find({ address }).toArray()
+    const addr = (address || "").toLowerCase()
+    const users = await collection.find({ address: addr }).toArray()
     if (!users || users.length === 0) return null
     // keep the first, delete the rest
     if (users.length > 1) {
@@ -144,8 +147,11 @@ export async function saveCourseToMongo(courseData: {
     const { db } = await connectToDatabase()
     const collection = db.collection(COURSES_COLLECTION)
 
+    // normalize mentor address
+    const mentorAddr = (courseData.mentorAddress || "").toLowerCase()
     const courseWithCode = {
       ...courseData,
+      mentorAddress: mentorAddr,
       code: generateUniqueCode(),
       createdAt: courseData.createdAt || new Date(),
       enrollments: 0,
@@ -165,7 +171,7 @@ export async function getCoursesFromMongo(mentorAddress?: string) {
     const { db } = await connectToDatabase()
     const collection = db.collection(COURSES_COLLECTION)
 
-    const query = mentorAddress ? { mentorAddress } : {}
+  const query = mentorAddress ? { mentorAddress: mentorAddress.toLowerCase() } : {}
     const courses = await collection.find(query).toArray()
     return courses
   } catch (error) {
@@ -237,6 +243,18 @@ export async function savePendingCourseEnrollmentToMongo(data: {
     return { ...doc, _id: result.insertedId }
   } catch (err) {
     console.error("Error saving pending course enrollment:", err)
+    throw err
+  }
+}
+
+export async function getPendingCourseRegistrations() {
+  try {
+    const { db } = await connectToDatabase()
+    const regs = db.collection("course_registrations")
+    const pending = await regs.find({ status: "pending" }).sort({ createdAt: -1 }).toArray()
+    return pending
+  } catch (err) {
+    console.error("Error fetching pending registrations:", err)
     throw err
   }
 }
@@ -436,7 +454,7 @@ export async function getBountiesFromMongo(mentorAddress?: string) {
     const { db } = await connectToDatabase()
     const collection = db.collection(BOUNTIES_COLLECTION)
 
-    const query = mentorAddress ? { mentorAddress } : {}
+  const query = mentorAddress ? { mentorAddress: mentorAddress.toLowerCase() } : {}
     const bounties = await collection.find(query).toArray()
     return bounties
   } catch (error) {

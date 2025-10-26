@@ -21,6 +21,7 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
   const [analysis, setAnalysis] = useState<{ summary?: string; bullets?: string[]; quiz?: any } | null>(null)
   const [answers, setAnswers] = useState<number[]>([])
   const [result, setResult] = useState<{ correct: number; incorrect: number; total: number } | null>(null)
+  const [currentQuestion, setCurrentQuestion] = useState(0)
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -56,15 +57,26 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
         throw new Error(json.error || "AI failed")
       }
 
-      setAnalysis(json.data || null)
+  setAnalysis(json.data || null)
       // initialize answers array for interactivity
       const qcount = (json.data?.quiz?.questions || []).length
       setAnswers(new Array(qcount).fill(-1))
       setStage("preview")
     } catch (error) {
       console.error("[v1] Error generating quiz:", error)
-      console.error("AI generation failed, falling back to sample quiz")
-      // If AI fails, load a fallback quiz (provided by user) so mentee can still take the quiz
+      console.error("AI generation failed, falling back to provided quiz content")
+
+      // Use the user-provided summary and bullets (contains citation tokens like [cite_start] and [cite:...])
+      const providedSummary = `Drivelink, presented by ApnaDriver, is a new service launching first in Kolkata to help car owners find verified drivers for their own vehicles[cite: 1, 3, 5, 11]. [cite_start]Users can book via an app or WhatsApp, set their own budget, and get matched with a driver who can accept or counter the offer[cite: 8, 9]. [cite_start]The company is seeking ₹35 Lakhs for 20% equity to launch its app, onboard over 300 drivers, and scale to 100+ daily bookings[cite: 188, 190].`;
+
+      const providedBullets = [
+        ` [cite_start]Problem: Drivelink aims to solve the problem for car owners who struggle to find verified drivers for their own cars, a process that is currently outdated, slow, and lacks safety or budget flexibility[cite: 5, 6, 7, 16, 17, 18, 19, 24, 26, 27].`,
+        ` [cite_start]Solution: The platform allows users to book a verified driver for their own car via WhatsApp or an app, with instant matching for bookings starting just 30 minutes ahead[cite: 8, 9]. [cite_start]A key feature is the 'name your budget' model, where drivers can accept or make a counter-offer[cite: 8, 9].`,
+        ` [cite_start]Monetization: The business model includes a dual revenue stream, focusing first on driver-side revenue through either a ₹499/month subscription or a 5-7% pay-per-booking commission[cite: 77, 78, 79, 80]. [cite_start]Future plans include a small convenience fee from users[cite: 81, 82, 83, 84].`,
+        ` [cite_start]The Ask: The company is seeking ₹35 Lakhs for 20% equity[cite: 188]. [cite_start]This pre-seed capital is intended to fund the app launch, onboard 300+ verified drivers, and achieve 100+ daily bookings in Kolkata[cite: 190].`,
+      ]
+
+      // Keep the existing fallback quiz questions (so users can still take the quiz)
       const fallback = [
         {
           question: "What is the name of the company that presented Drivelink?",
@@ -123,10 +135,10 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
         },
       ]
 
-      // normalize fallback into analysis format
+      // normalized analysis uses the provided summary/bullets and the fallback questions
       const normalized = {
-        summary: "Fallback quiz loaded — AI analysis not available.",
-        bullets: [],
+        summary: providedSummary,
+        bullets: providedBullets,
         quiz: { questions: fallback.map((q: any) => ({ prompt: q.question, options: q.options, correct: q.answer })) },
       }
 
@@ -316,11 +328,12 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
                 {analysis ? (
                   <div>
                     <div className="prose max-w-none text-foreground">
-                      <p>{analysis.summary}</p>
+                      {/* Render citations inline: replace [cite:...] tokens with superscript */}
+                      <p dangerouslySetInnerHTML={{ __html: String(analysis.summary || "").replace(/\[cite_start\]/g, "").replace(/\[cite:([^\]]+)\]/g, (m, g1) => `<sup class=\"text-xs\">[${g1}]</sup>`) }} />
                     </div>
                     <ul className="list-disc ml-6 mt-4 text-foreground">
                       {(analysis.bullets || []).map((b, i) => (
-                        <li key={i}>{b}</li>
+                        <li key={i} dangerouslySetInnerHTML={{ __html: String(b).replace(/\[cite_start\]/g, "").replace(/\[cite:([^\]]+)\]/g, (m, g1) => `<sup class=\"text-xs\">[${g1}]</sup>`) }} />
                       ))}
                     </ul>
                   </div>
@@ -338,29 +351,46 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
               <CardContent className="space-y-4">
                 {analysis && analysis.quiz ? (
                   <div>
-                    {(analysis.quiz.questions || []).map((q: any, idx: number) => (
-                      <div key={idx} className="p-4 bg-muted/30 rounded-lg mb-3">
-                        <p className="font-semibold text-foreground mb-2">{q.prompt}</p>
-                        <div className="space-y-2">
+                    {/* Single-question view with navigation */}
+                    {((analysis.quiz.questions || [])[currentQuestion]) ? (
+                      (() => {
+                        const q = (analysis.quiz.questions || [])[currentQuestion]
+                        return (
+                          <div className="p-4 bg-muted/30 rounded-lg mb-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="font-semibold text-foreground">Question {currentQuestion + 1} of {(analysis.quiz.questions || []).length}</p>
+                              <div className="text-sm text-muted-foreground">Progress: {currentQuestion + 1}/{(analysis.quiz.questions || []).length}</div>
+                            </div>
+                            <p className="font-semibold text-foreground mb-4">{q.prompt}</p>
+                            <div className="space-y-2">
                               {(q.options || []).map((opt: string, oi: number) => (
-                                <label key={oi} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                                <label key={oi} className={`flex items-center gap-2 text-sm cursor-pointer p-2 rounded ${answers[currentQuestion] === oi ? 'bg-primary/10 border border-primary/30' : ''}`}>
                                   <input
                                     type="radio"
-                                    name={`q${idx}`}
+                                    name={`q${currentQuestion}`}
                                     className="w-4 h-4"
-                                    checked={answers[idx] === oi}
+                                    checked={answers[currentQuestion] === oi}
                                     onChange={() => {
                                       const copy = [...answers]
-                                      copy[idx] = oi
+                                      copy[currentQuestion] = oi
                                       setAnswers(copy)
                                     }}
                                   />
-                                  {opt}
+                                  <span className="text-foreground">{opt}</span>
                                 </label>
                               ))}
-                        </div>
-                      </div>
-                    ))}
+                            </div>
+                            <div className="flex justify-between mt-4">
+                              <Button variant="outline" onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))} disabled={currentQuestion === 0}>Previous</Button>
+                              <div>
+                                <Button variant="ghost" onClick={() => { const copy = [...answers]; copy[currentQuestion] = -1; setAnswers(copy) }} className="mr-2">Clear</Button>
+                                <Button onClick={() => setCurrentQuestion(Math.min((analysis.quiz.questions || []).length - 1, currentQuestion + 1))} disabled={currentQuestion >= (analysis.quiz.questions || []).length - 1}>Next</Button>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })()
+                    ) : null}
                   </div>
                 ) : (
                   <p className="text-muted-foreground">No quiz generated</p>

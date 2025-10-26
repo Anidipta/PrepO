@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import path from "path"
 import { ethers } from "ethers"
 import { CONTRACT_ADDRESS } from "@/lib/smart-contracts"
+import { connectToDatabase } from "@/lib/mongodb"
 
 const RPC_URL = process.env.CELO_RPC_URL || process.env.RPC_URL || "https://forno.celo.org"
 
@@ -102,6 +103,26 @@ export async function POST(request: NextRequest) {
     }
 
     const bounty = await saveBountyToMongo(bountyBody)
+    // If bounty wasn't funded on-chain, queue a registration request for mentor/owner to process
+    try {
+      const { db } = await connectToDatabase()
+      const reqs = db.collection("onchain_bounty_registration_requests")
+      const doc = {
+        bountyCode: bounty.code,
+        bountyId: String(bounty._id),
+        mentorAddress: bounty.mentorAddress || null,
+        prizePool: Number(bounty.prizePool || 0),
+        entryFee: Number(bounty.entryFee || 0),
+        linkedCourse: bounty.linkedCourse || null,
+        funded: !!bounty.funded,
+        status: bounty.funded ? "completed" : "pending",
+        createdAt: new Date(),
+      }
+      await reqs.insertOne(doc)
+    } catch (e) {
+      console.warn("Failed to queue bounty registration request:", e)
+    }
+
     return NextResponse.json({ success: true, data: bounty })
   } catch (error) {
     console.error("API error:", error)

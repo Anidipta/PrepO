@@ -50,10 +50,12 @@ rainbow Kit)
 
 📜 **Deployed Contract:** 
 
-[0xFDcCd57d423EC8E3DbA325cecB5560cdC2BC9cbb](https://explorer.celo.org/contract/0xFDcCd57d423EC8E3DbA325cecB5560cdC2BC9cbb)  , 
-[0x0BC8dCb2c6F6AA1dFD236c985241dad86C6593DF](https://explorer.celo.org/contract/0x0BC8dCb2c6F6AA1dFD236c985241dad86C6593DF)
+[0xFDcCd57d423EC8E3DbA325cecB5560cdC2BC9cbb](https://celo-sepolia.blockscout.com/address/0xFDcCd57d423EC8E3DbA325cecB5560cdC2BC9cbb?tab=index)  , 
+[0x0BC8dCb2c6F6AA1dFD236c985241dad86C6593DF](https://celo-sepolia.blockscout.com/address/0x0BC8dCb2c6F6AA1dFD236c985241dad86C6593DF?tab=txs)
 
 🧱 **Network:** CELO Sepolia Testnet  
+
+**Live Backend AI:** [Here](https://prepo-ai.onrender.com)
 
 ---
 

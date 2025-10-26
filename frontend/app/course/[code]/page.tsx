@@ -336,10 +336,110 @@ export default function CoursePage() {
                 const signer = await provider.getSigner()
 
                 try {
-                  const result = await enrollInCourseOnChain(signer, course.code, totalAmount)
-                  console.log("enroll tx result:", result)
+                  // The contract maps courses by the MongoDB course ID (insertedId),
+                  // not the user-facing short `code`. Prefer `_id` when available.
+                  const courseIdForChain = course?._id
+                    ? (typeof course._id === "string" ? course._id : course._id.toString())
+                    : (course?.id || course?.code)
 
+                  // Debug: log the identifiers we will use on-chain so we can inspect mismatches
+                  console.log("Enroll attempt — course identifiers:", {
+                    courseCode: course?.code,
+                    courseId: course?._id,
+                    courseIdForChain,
+                  })
+
+                  // Pre-flight read: check whether the contract actually has this course registered
+                  // get the student address early so we can include it in any server request
                   const studentAddress = await signer.getAddress()
+                  try {
+                    const readProvider = new ethers.BrowserProvider((window as any).ethereum)
+                    const readContract = new ethers.Contract(CONTRACT_ADDRESS, [
+                      "function courses(string) view returns (address mentor, string courseId, uint256 price, bool exists)",
+                    ], readProvider)
+
+                    const onChain = await readContract.courses(courseIdForChain)
+                    const exists = onChain && (onChain.exists === true || onChain[3] === true)
+                    console.log("on-chain course lookup result:", onChain)
+                    if (!exists) {
+                      // Course not registered on-chain.
+                      // Offer the mentee a choice: either notify owner (no on-chain payment),
+                      // or send the enrollment amount directly to the contract address as a deposit
+                      // which will be recorded as a pending enrollment for owner confirmation.
+                      try {
+                        const depositChoice = window.confirm(
+                          `This course is not registered on-chain yet.\n\nYou can notify the platform owner so they can register it, or you can send ${totalAmount} CELO to the contract address now to reserve enrollment (owner will still need to confirm).\n\nClick OK to send ${totalAmount} CELO to the contract address now, or Cancel to only notify the owner.`
+                        )
+
+                        if (depositChoice) {
+                          // Send native CELO to the contract address from the mentee's wallet
+                          try {
+                            const amountToSend = totalAmount
+                            const tx = await signer.sendTransaction({ to: CONTRACT_ADDRESS, value: ethers.parseEther(String(amountToSend)) })
+                            await tx.wait()
+
+                            // Record pending enrollment server-side
+                            const res = await fetch(`/api/courses/${encodeURIComponent(course.code)}`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ userAddress: studentAddress, amountPaid: amountToSend, txHash: tx.hash }),
+                            })
+                            const jr = await res.json().catch(() => ({}))
+                            if (!res.ok) {
+                              console.warn("Failed to record pending enrollment after deposit:", jr)
+                              alert("Payment sent but failed to notify server. Please contact the platform owner with tx: " + tx.hash)
+                            } else {
+                              setPendingTx(tx.hash)
+                              setPendingStatus("pending")
+                              setEnrolled(true)
+                              alert("Payment sent to contract. Enrollment recorded as pending; owner will confirm when they register the course. Tx: " + tx.hash)
+                            }
+                            setIsProcessing(false)
+                            return
+                          } catch (sendErr) {
+                            console.error("Deposit transfer failed:", sendErr)
+                            alert("Sending payment to contract failed: " + (sendErr as any)?.message)
+                            // fallthrough to notify owner path
+                          }
+                        }
+
+                        // If mentee chose not to deposit or deposit failed, still notify owner by queuing a registration request
+                        const body = {
+                          courseCode: course?.code,
+                          courseId: courseIdForChain,
+                          mentorAddress: course?.mentorAddress || course?.mentor,
+                          fee: course?.fee,
+                          requestedBy: studentAddress,
+                        }
+
+                        const requestPathId = courseIdForChain || course?.code || ''
+                        const rr = await fetch(`/api/courses/${encodeURIComponent(requestPathId)}/request-register`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(body),
+                        })
+
+                        if (rr.ok) {
+                          alert("This course is not yet registered on-chain. We've recorded a registration request and notified the platform owner. Please try enrolling again later.")
+                        } else {
+                          const jr = await rr.json().catch(() => ({}))
+                          alert("Unable to notify owner automatically: " + (jr?.error || jr?.message || "server error") + ". Please contact the platform owner with this course id: " + courseIdForChain)
+                        }
+                      } catch (postErr) {
+                        console.warn("Failed to POST registration request:", postErr)
+                        alert("This course is not registered on-chain. Please contact the platform owner and provide this course id: " + courseIdForChain)
+                      }
+
+                      setIsProcessing(false)
+                      return
+                    }
+                  } catch (readErr) {
+                    console.warn("Pre-flight on-chain course check failed (continuing to attempt enroll):", readErr)
+                    // fallthrough — we'll still attempt the enroll which may revert, but we logged the read error
+                  }
+
+                  const result = await enrollInCourseOnChain(signer, courseIdForChain, totalAmount)
+                  console.log("enroll tx result:", result)
 
                   // Record enrollment server-side (save txHash for reference)
                   const res = await fetch(`/api/courses/${course.code}`, {

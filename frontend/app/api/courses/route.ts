@@ -2,6 +2,9 @@ import { getCoursesFromMongo, saveCourseToMongo } from "@/lib/mongodb"
 import { type NextRequest, NextResponse } from "next/server"
 import fs from "fs/promises"
 import path from "path"
+import { connectToDatabase } from "@/lib/mongodb"
+import { ethers } from "ethers"
+import { CONTRACT_ADDRESS } from "@/lib/smart-contracts"
 
 export async function GET(request: NextRequest) {
   try {
@@ -54,6 +57,44 @@ export async function POST(request: NextRequest) {
     }
 
     const course = await saveCourseToMongo(courseBody)
+    // After saving to Mongo, create or queue an on-chain registration request so the owner can register the course
+    try {
+      const { db } = await connectToDatabase()
+      const reqs = db.collection("onchain_course_registration_requests")
+      const doc = {
+        courseCode: course.code,
+        courseId: String(course._id),
+        mentorAddress: course.mentorAddress || null,
+        fee: Number(course.fee || 0),
+        status: "pending",
+        createdAt: new Date(),
+      }
+      const inserted = await reqs.insertOne(doc)
+
+      // If server has owner credentials, attempt to register immediately on-chain
+      const OWNER_PRIVATE_KEY = process.env.OWNER_PRIVATE_KEY || process.env.PRIVATE_KEY
+      const RPC_URL = process.env.CELO_RPC_URL || process.env.RPC_URL || "https://forno.celo.org"
+      if (OWNER_PRIVATE_KEY) {
+        try {
+          const provider = new ethers.JsonRpcProvider(RPC_URL)
+          const ownerWallet = new ethers.Wallet(OWNER_PRIVATE_KEY, provider)
+          const contract = new ethers.Contract(CONTRACT_ADDRESS, ["function createCourse(string,address,uint256) external"], ownerWallet)
+          const priceWei = ethers.parseEther(String(course.fee || 0))
+          const tx = await contract.createCourse(String(course._id), course.mentorAddress || ownerWallet.address, priceWei)
+          const receipt = await tx.wait()
+          // mark request completed
+          await reqs.updateOne({ _id: inserted.insertedId }, { $set: { status: "completed", txHash: tx.hash, completedAt: new Date() } })
+          // update course record to note on-chain registration
+          const coursesColl = db.collection("courses")
+          await coursesColl.updateOne({ _id: course._id }, { $set: { onchain: true, onchainTxHash: tx.hash, updatedAt: new Date() } })
+        } catch (onchainErr) {
+          console.warn("Automatic on-chain course registration failed, left queued:", onchainErr)
+          // leave the request pending for manual owner processing
+        }
+      }
+    } catch (reqErr) {
+      console.warn("Failed to queue on-chain registration request:", reqErr)
+    }
     return NextResponse.json({ success: true, data: course })
   } catch (error) {
     console.error("API error:", error)
