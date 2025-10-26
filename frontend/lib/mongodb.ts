@@ -56,10 +56,26 @@ async function ensureCollectionsAndIndexes(db: any) {
     if (activities.length === 0) {
       await db.createCollection("progress")
     }
-      const reg = await db.listCollections({ name: "course_registrations" }).toArray()
-      if (reg.length === 0) {
-        await db.createCollection("course_registrations")
-      }
+    const reg = await db.listCollections({ name: "course_registrations" }).toArray()
+    if (reg.length === 0) {
+      await db.createCollection("course_registrations")
+    }
+    const bountyRegs = await db.listCollections({ name: "bounty_registrations" }).toArray()
+    if (bountyRegs.length === 0) {
+      await db.createCollection("bounty_registrations")
+    }
+    const onchainCourseReq = await db.listCollections({ name: "onchain_course_registration_requests" }).toArray()
+    if (onchainCourseReq.length === 0) {
+      await db.createCollection("onchain_course_registration_requests")
+    }
+    const onchainBountyReq = await db.listCollections({ name: "onchain_bounty_registration_requests" }).toArray()
+    if (onchainBountyReq.length === 0) {
+      await db.createCollection("onchain_bounty_registration_requests")
+    }
+    const payouts = await db.listCollections({ name: "onchain_payouts" }).toArray()
+    if (payouts.length === 0) {
+      await db.createCollection("onchain_payouts")
+    }
   } catch (err) {
     console.warn("ensureCollectionsAndIndexes warning:", err)
   }

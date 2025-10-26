@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useAccount } from "wagmi"
-import { CONTRACT_ADDRESS, enrollInCourseOnChain, PLATFORM_FEE } from "@/lib/smart-contracts"
+import { CONTRACT_ADDRESS, enrollInCourseOnChain } from "@/lib/smart-contracts"
 import { ethers } from "ethers"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ export default function CoursePage() {
   const [pendingTx, setPendingTx] = useState<string | null>(null)
   const [pendingStatus, setPendingStatus] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [shownCongrats, setShownCongrats] = useState(false)
   const { address: connectedAddress } = useAccount()
 
   // Poll registration status when there's a pending tx
@@ -55,7 +56,25 @@ export default function CoursePage() {
       if (timer) clearInterval(timer)
     }
   }, [pendingTx, connectedAddress, course?.code])
+
+  // Show a one-time congratulations popup when enrollment becomes confirmed
+  useEffect(() => {
+    if (pendingStatus === 'confirmed' && !shownCongrats) {
+      try {
+        // lightweight celebratory message (keeps UX minimal)
+        alert("Congratulations — you're enrolled in this course!")
+      } catch (e) {
+        console.info('Enrollment confirmed')
+      }
+      setShownCongrats(true)
+    }
+  }, [pendingStatus, shownCongrats])
   const { address } = useAccount()
+
+  // Display fee breakdown to the user: course fee + transfer fee (estimated)
+  const DISPLAY_BASE_FEE = Number(course?.fee || 0)
+  const DISPLAY_TRANSFER_FEE = 0.05
+  const DISPLAY_TOTAL = Number((DISPLAY_BASE_FEE + DISPLAY_TRANSFER_FEE).toFixed(6))
 
   const getSigner = async () => {
     if (typeof window !== "undefined" && (window as any).ethereum) {
@@ -287,9 +306,12 @@ export default function CoursePage() {
               // Clear previous state
               try {
                 const baseFee = Number(course.fee || 0)
-                const totalAmount = Number((baseFee + PLATFORM_FEE).toFixed(6))
+                const TRANSFER_FEE = 0.05 // estimated transfer / platform fee shown to user
+                const totalAmount = Number((baseFee + TRANSFER_FEE).toFixed(6))
 
-                const proceed = window.confirm(`You will be charged ${totalAmount} CELO to enroll in ${course.title}. Proceed to wallet confirmation?`)
+                const proceed = window.confirm(
+                  `You will be charged ${baseFee.toFixed(6)} CELO (course fee) + ${TRANSFER_FEE.toFixed(6)} CELO (transfer fees) = ${totalAmount.toFixed(6)} CELO total. Proceed to wallet confirmation?`
+                )
                 if (!proceed) return
 
                 if (!(window as any).ethereum) {
@@ -376,25 +398,41 @@ export default function CoursePage() {
                           try {
                             const amountToSend = totalAmount
                             const tx = await signer.sendTransaction({ to: CONTRACT_ADDRESS, value: ethers.parseEther(String(amountToSend)) })
-                            await tx.wait()
 
-                            // Record pending enrollment server-side
-                            const res = await fetch(`/api/courses/${encodeURIComponent(course.code)}`, {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ userAddress: studentAddress, amountPaid: amountToSend, txHash: tx.hash }),
-                            })
-                            const jr = await res.json().catch(() => ({}))
-                            if (!res.ok) {
-                              console.warn("Failed to record pending enrollment after deposit:", jr)
-                              alert("Payment sent but failed to notify server. Please contact the platform owner with tx: " + tx.hash)
-                            } else {
-                              setPendingTx(tx.hash)
-                              setPendingStatus("pending")
-                              setEnrolled(true)
-                              alert("Payment sent to contract. Enrollment recorded as pending; owner will confirm when they register the course. Tx: " + tx.hash)
+                            // show tx hash and wait for confirmation before recording in DB
+                            setPendingTx(tx.hash)
+                            setIsProcessing(true)
+                            try {
+                              await tx.wait()
+                              // After on-chain confirmation, record pending enrollment server-side
+                              try {
+                                const res = await fetch(`/api/courses/${encodeURIComponent(course.code)}`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ userAddress: studentAddress, amountPaid: amountToSend, txHash: tx.hash }),
+                                })
+                                const jr = await res.json().catch(() => ({}))
+                                if (!res.ok) {
+                                  console.warn("Failed to record pending enrollment after deposit:", jr)
+                                  console.info("Payment confirmed on-chain but server failed to record pending enrollment. Please provide tx to owner:", tx.hash)
+                                  setPendingStatus("pending")
+                                  setEnrolled(true)
+                                } else {
+                                  setPendingStatus("pending")
+                                  setEnrolled(true)
+                                  console.info("Pending enrollment recorded", jr)
+                                }
+                              } catch (recErr) {
+                                console.warn("Failed to POST pending enrollment:", recErr)
+                                setPendingStatus("pending")
+                                setEnrolled(true)
+                              }
+                            } catch (wErr) {
+                              console.error("Transaction confirmation failed:", wErr)
+                              alert("Transaction was sent but confirmation failed: " + ((wErr as any)?.message || String(wErr)))
+                            } finally {
+                              setIsProcessing(false)
                             }
-                            setIsProcessing(false)
                             return
                           } catch (sendErr) {
                             console.error("Deposit transfer failed:", sendErr)
@@ -420,14 +458,14 @@ export default function CoursePage() {
                         })
 
                         if (rr.ok) {
-                          alert("This course is not yet registered on-chain. We've recorded a registration request and notified the platform owner. Please try enrolling again later.")
+                          console.info("Registration request queued for owner (course not on-chain)")
                         } else {
                           const jr = await rr.json().catch(() => ({}))
-                          alert("Unable to notify owner automatically: " + (jr?.error || jr?.message || "server error") + ". Please contact the platform owner with this course id: " + courseIdForChain)
+                          console.warn("Unable to notify owner automatically:", jr)
                         }
                       } catch (postErr) {
                         console.warn("Failed to POST registration request:", postErr)
-                        alert("This course is not registered on-chain. Please contact the platform owner and provide this course id: " + courseIdForChain)
+                        console.warn("This course is not registered on-chain. Please contact the platform owner and provide this course id:", courseIdForChain)
                       }
 
                       setIsProcessing(false)
@@ -438,40 +476,47 @@ export default function CoursePage() {
                     // fallthrough — we'll still attempt the enroll which may revert, but we logged the read error
                   }
 
-                  const result = await enrollInCourseOnChain(signer, courseIdForChain, totalAmount)
-                  console.log("enroll tx result:", result)
-
-                  // Record enrollment server-side (save txHash for reference)
-                  const res = await fetch(`/api/courses/${course.code}`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ userAddress: studentAddress, amountPaid: totalAmount, txHash: result.txHash }),
-                  })
-                  const j = await res.json().catch(() => ({}))
-                  if (!res.ok) {
-                    throw new Error(j?.error || "Failed to record enrollment on server")
-                  }
-
-                  setPendingTx(result.txHash)
-                  setPendingStatus("pending")
-                  setEnrolled(true)
-
-                  alert("Enrollment submitted on-chain. Waiting for platform confirmation (owner). Transaction: " + result.txHash)
-
-                  // Live update: wait for the transaction to be mined (included in a block)
+                  // Instead of calling the contract method directly, send the full payment
+                  // as a native transfer to the contract address. The owner/admin will later
+                  // confirm the enrollment and release the mentor share.
                   try {
-                    const liveProvider = new ethers.BrowserProvider((window as any).ethereum)
-                    // waitForTransaction resolves when the tx is mined (1 confirmation)
-                    liveProvider.waitForTransaction(result.txHash).then((receipt) => {
-                      if (receipt) {
-                        setPendingStatus("mined")
+                    const tx = await signer.sendTransaction({ to: CONTRACT_ADDRESS, value: ethers.parseEther(String(totalAmount)) })
+                    setPendingTx(tx.hash)
+                    setIsProcessing(true)
+                    try {
+                      await tx.wait()
+                      // After on-chain confirmation, post to server as pending
+                      try {
+                        const res = await fetch(`/api/courses/${encodeURIComponent(course.code)}`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ userAddress: studentAddress, amountPaid: totalAmount, txHash: tx.hash }),
+                        })
+                        const j = await res.json().catch(() => ({}))
+                        if (!res.ok) {
+                          console.warn("Failed to record pending enrollment on server:", j)
+                          console.info("Payment confirmed on-chain but server failed to record pending enrollment. Please provide tx to owner:", tx.hash)
+                          setPendingStatus("pending")
+                          setEnrolled(true)
+                        } else {
+                          setPendingStatus("pending")
+                          setEnrolled(true)
+                          console.info("Pending enrollment recorded", j)
+                        }
+                      } catch (recErr) {
+                        console.warn("Failed to POST pending enrollment:", recErr)
+                        setPendingStatus("pending")
+                        setEnrolled(true)
                       }
-                    }).catch((e) => {
-                      console.warn("waitForTransaction error", e)
-                      setPendingStatus("error")
-                    })
-                  } catch (e) {
-                    console.warn("Live tx monitoring not available", e)
+                    } catch (wErr) {
+                      console.error("Transaction confirm failed:", wErr)
+                      alert("Transaction was sent but failed during confirmation: " + ((wErr as any)?.message || String(wErr)))
+                    } finally {
+                      setIsProcessing(false)
+                    }
+                  } catch (errTx) {
+                    console.error("Direct transfer to contract failed:", errTx)
+                    alert("Payment failed: " + (errTx as any)?.message)
                   }
                 } catch (err) {
                   console.error("Enroll/payment error:", err)
@@ -487,7 +532,7 @@ export default function CoursePage() {
             }}
             className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
           >
-            {isProcessing ? `Processing — confirm in wallet` : `Enroll Now - ${course.fee} CELO`}
+            {isProcessing ? `Processing — confirm in wallet` : `Enroll Now - ${DISPLAY_TOTAL} CELO (includes ${DISPLAY_TRANSFER_FEE} CELO transfer fee)`}
           </Button>
         )}
         {/* Pending enrollment banner */}

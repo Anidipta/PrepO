@@ -434,7 +434,7 @@ export default function CreateBountyModal({ onClose }: CreateBountyModalProps) {
           {stage === "confirmation" && (
             <Button
               onClick={onClose}
-              className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
+              className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground py-6 text-base font-semibold"
             >
               Back to Dashboard
             </Button>

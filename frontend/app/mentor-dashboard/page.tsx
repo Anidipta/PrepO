@@ -25,6 +25,7 @@ export default function MentorDashboard() {
   const [mentorCourses, setMentorCourses] = useState<any[]>([])
   const [mentorBounties, setMentorBounties] = useState<any[]>([])
   const [pendingEnrollments, setPendingEnrollments] = useState<any[]>([])
+  const [completedEnrollments, setCompletedEnrollments] = useState<any[]>([])
 
   const stats = [
     { label: "Courses Created", value: String(coursesCount || 0), icon: "📚" },
@@ -85,6 +86,16 @@ export default function MentorDashboard() {
           }
         } catch (e) {
           console.warn("Failed to fetch pending enrollments", e)
+        }
+        try {
+          const doneRes = await fetch(`/api/courses/registrations?mentor=${address}&status=confirmed`)
+          if (doneRes.ok) {
+            const doneJson = await doneRes.json()
+            const doneData = (doneJson && doneJson.data) || doneJson
+            setCompletedEnrollments(Array.isArray(doneData) ? doneData : [])
+          }
+        } catch (e) {
+          console.warn("Failed to fetch completed enrollments", e)
         }
       } catch (err) {
         console.error("Failed to fetch user", err)
@@ -319,7 +330,7 @@ export default function MentorDashboard() {
                   <CardDescription>Students who paid on-chain and are awaiting owner confirmation</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {pendingEnrollments.length === 0 && <p className="text-sm text-muted-foreground">No pending enrollments.</p>}
+            {pendingEnrollments.length === 0 && <p className="text-sm text-muted-foreground">No pending enrollments.</p>}
                   <div className="space-y-3">
                     {pendingEnrollments.map((p: any) => (
                       <div key={String(p._id)} className="flex items-center justify-between p-3 rounded bg-muted/30">
@@ -341,10 +352,10 @@ export default function MentorDashboard() {
                                 if (!res.ok) throw new Error(j?.error || "Failed to confirm")
                                 // remove from list
                                 setPendingEnrollments((prev) => prev.filter((x) => String(x._id) !== String(p._id)))
-                                alert("Enrollment confirmed on-chain and recorded")
+                                  console.info("Enrollment confirmed and recorded")
                               } catch (err) {
                                 console.error("Confirm enrollment failed", err)
-                                alert("Failed to confirm enrollment: " + (err as any)?.message)
+                                  console.warn("Failed to confirm enrollment:", (err as any)?.message)
                               }
                             }}
                             className="bg-gradient-to-r from-primary to-secondary text-primary-foreground px-4 py-2 rounded"
@@ -352,6 +363,27 @@ export default function MentorDashboard() {
                             Confirm
                           </button>
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="glass-effect border-primary/20">
+                <CardHeader>
+                  <CardTitle>Confirmed Enrollments</CardTitle>
+                  <CardDescription>Enrollments you've been paid for</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {completedEnrollments.length === 0 && <p className="text-sm text-muted-foreground">No confirmed enrollments yet.</p>}
+                  <div className="space-y-3">
+                    {completedEnrollments.map((c: any) => (
+                      <div key={String(c._id)} className="flex items-center justify-between p-3 rounded bg-muted/30">
+                        <div>
+                          <div className="font-semibold">{c.courseCode}</div>
+                          <div className="text-sm text-muted-foreground">Student: {c.userAddress}</div>
+                          <div className="text-sm text-muted-foreground">Amount: {Number(c.amountPaid || 0).toFixed(6)} CELO</div>
+                        </div>
+                        <div className="text-sm text-muted-foreground">{c.confirmedAt ? new Date(c.confirmedAt).toLocaleString() : '-'}</div>
                       </div>
                     ))}
                   </div>
