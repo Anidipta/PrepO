@@ -12,6 +12,18 @@ Built on the **CELO blockchain**, it enables **mentors** to create courses and *
 
 ---
 
+## What Problem We Are Solving
+
+- Learning platforms are centralized and unrewarding.
+
+- No direct financial incentives for learners.
+
+- Mentors struggle to monetize content fairly.
+
+- Engagement is low due to lack of gamification or real-time competition.
+
+---
+
 ## ✨ Key Features  
 
 ### 🎓 For Mentors  
@@ -150,8 +162,3 @@ A
 
 MIT License © 2025 Anidipta Pal
 
----
-
-### 💬 “Learn. Earn. Compete. Repeat.”
-
-> The future of education is decentralized, AI-driven, and rewarding.
