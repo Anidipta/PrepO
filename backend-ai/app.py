@@ -18,8 +18,16 @@ GROQ_MODEL = os.getenv("GROQ_MODEL") or "llama-3.3-70b-versatile"
 if not GROQ_API_KEY:
     print("Warning: GROQ_API_KEY is not set. AI calls will fail.")
 
-# Initialize Groq client
-groq_client = Groq(api_key=GROQ_API_KEY)
+# Initialize Groq client (guarded)
+groq_client = None
+try:
+    if GROQ_API_KEY:
+        groq_client = Groq(api_key=GROQ_API_KEY)
+    else:
+        groq_client = None
+except Exception as e:
+    print(f"Failed to initialize Groq client: {e}")
+    groq_client = None
 
 # Create files directory
 FILES_DIR = Path("public/files")
@@ -97,6 +105,10 @@ File name: {file.filename}
 Base64 content: {truncated_base64}"""
         
         # Call Groq API
+        if not groq_client:
+            print("AI provider not configured: GROQ_API_KEY missing or client init failed")
+            raise HTTPException(status_code=502, detail="AI provider not configured")
+
         try:
             completion = groq_client.chat.completions.create(
                 model=GROQ_MODEL,
@@ -105,10 +117,12 @@ Base64 content: {truncated_base64}"""
                 temperature=0.3,
                 response_format={"type": "json_object"}
             )
-            
+
             response_text = completion.choices[0].message.content or ""
-            
+
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"Groq API error: {e}")
             raise HTTPException(status_code=502, detail=f"AI provider error: {str(e)}")
         

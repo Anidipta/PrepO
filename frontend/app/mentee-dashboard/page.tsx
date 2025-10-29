@@ -21,11 +21,12 @@ export default function MenteeDashboard() {
   const [coursesCount, setCoursesCount] = useState<number>(0)
   const [bountiesCount, setBountiesCount] = useState<number>(0)
   const [quizzesCompleted, setQuizzesCompleted] = useState<number>(0)
+  const [earnedCelo, setEarnedCelo] = useState<number | null>(null)
 
   const stats = [
     { label: "Courses Joined", value: `${coursesCount}`, icon: "📚" },
     { label: "Quizzes Completed", value: `${quizzesCompleted}`, icon: "✓" },
-    { label: "CELO Earned", value: balanceData?.formatted ? parseFloat(balanceData.formatted).toFixed(3) : "0.000", icon: "💰" },
+    { label: "CELO Earned", value: earnedCelo !== null ? earnedCelo.toFixed(3) : (balanceData?.formatted ? parseFloat(balanceData.formatted).toFixed(3) : "0.000"), icon: "💰", isNegative: (earnedCelo || 0) < 0 },
     { label: "Available Bounties", value: `${bountiesCount}`, icon: "🏆" },
   ]
 
@@ -33,11 +34,26 @@ export default function MenteeDashboard() {
     if (!address) return
     (async () => {
       try {
-        const res = await fetch(`/api/user/${address}`)
-        const json = await res.json()
-        if (json?.found && json.user?.name) {
-          setUserName(json.user.name)
-          localStorage.setItem("userName", json.user.name)
+        // Fetch user (name + earnings) and per-user stats (courses joined, quizzes completed)
+        const [userRes, statsRes] = await Promise.all([
+          fetch(`/api/user/${encodeURIComponent(address)}`),
+          fetch(`/api/user/${encodeURIComponent(address)}/stats`),
+        ])
+
+        const [userJson, statsJson] = await Promise.all([userRes.json().catch(() => ({})), statsRes.json().catch(() => ({}))])
+
+        if (userJson?.found && userJson.user?.name) {
+          setUserName(userJson.user.name)
+          localStorage.setItem("userName", userJson.user.name)
+        }
+
+        if (userJson?.earnings) {
+          setEarnedCelo(Number(userJson.earnings.total || 0))
+        }
+
+        if (statsJson?.success && statsJson.data) {
+          setCoursesCount(Number(statsJson.data.coursesJoined || 0))
+          setQuizzesCompleted(Number(statsJson.data.quizzesCompleted || 0))
         }
       } catch (err) {
         console.error("Failed to fetch user", err)
@@ -148,10 +164,10 @@ export default function MenteeDashboard() {
                   <Card key={idx} className="glass-effect border-primary/20 hover:border-primary/50 transition-all">
                     <CardContent className="pt-6">
                       <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm text-muted-foreground">{stat.label}</p>
-                          <p className="text-3xl font-bold text-foreground mt-2">{stat.value}</p>
-                        </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">{stat.label}</p>
+                                  <p className={`text-3xl font-bold mt-2 ${stat.isNegative ? 'text-red-500' : 'text-foreground'}`}>{stat.value}</p>
+                                </div>
                         <div className="text-4xl">{stat.icon}</div>
                       </div>
                     </CardContent>

@@ -84,6 +84,14 @@ async function ensureCollectionsAndIndexes(db: any) {
     if (payouts.length === 0) {
       await db.createCollection("onchain_payouts")
     }
+    const earnings = await db.listCollections({ name: "earnings" }).toArray()
+    if (earnings.length === 0) {
+      await db.createCollection("earnings")
+    }
+    const bountyPrizes = await db.listCollections({ name: "bounty_prizes" }).toArray()
+    if (bountyPrizes.length === 0) {
+      await db.createCollection("bounty_prizes")
+    }
   } catch (err) {
     console.warn("ensureCollectionsAndIndexes warning:", err)
   }
@@ -561,5 +569,65 @@ export async function saveGeneratedQuizToMongo(data: {
   } catch (error) {
     console.error("Error saving generated quiz to MongoDB:", error)
     throw error
+  }
+}
+
+// Save a single earning record for a user (quiz reward, bounty prize, etc.)
+export async function saveEarningToMongo(data: {
+  userAddress: string
+  source: string // e.g., 'quiz', 'bounty'
+  amount: number // can be negative for penalties
+  metadata?: any
+  createdAt?: Date
+}) {
+  try {
+    const { db } = await connectToDatabase()
+    const coll = db.collection("earnings")
+
+    const doc = {
+      userAddress: (data.userAddress || "").toLowerCase(),
+      source: data.source,
+      amount: Number(data.amount || 0),
+      metadata: data.metadata || null,
+      createdAt: data.createdAt || new Date(),
+    }
+
+    const res = await coll.insertOne(doc)
+    return { ...doc, _id: res.insertedId }
+  } catch (err) {
+    console.error("Error saving earning to MongoDB:", err)
+    throw err
+  }
+}
+
+// Get aggregated earnings for a user, with breakdown by source
+export async function getUserEarningsSummary(address: string) {
+  try {
+    const { db } = await connectToDatabase()
+    const coll = db.collection("earnings")
+    const addr = (address || "").toLowerCase()
+
+    const pipeline = [
+      { $match: { userAddress: addr } },
+      {
+        $group: {
+          _id: "$source",
+          total: { $sum: "$amount" },
+        },
+      },
+    ]
+
+    const agg = await coll.aggregate(pipeline).toArray()
+    const summary: Record<string, number> = {}
+    let grand = 0
+    for (const row of agg) {
+      summary[row._id] = Number(row.total || 0)
+      grand += Number(row.total || 0)
+    }
+
+    return { summary, total: grand }
+  } catch (err) {
+    console.error("Error fetching user earnings summary:", err)
+    throw err
   }
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getUserFromMongo } from "@/lib/mongodb"
+import { getUserFromMongo, getUserEarningsSummary } from "@/lib/mongodb"
 
 export async function GET(request: Request, context: any) {
   try {
@@ -15,7 +15,14 @@ export async function GET(request: Request, context: any) {
       return NextResponse.json({ found: false }, { status: 200 })
     }
 
-    return NextResponse.json({ found: true, user }, { status: 200 })
+    // also fetch earnings summary
+    try {
+      const earnings = await getUserEarningsSummary(address)
+      return NextResponse.json({ found: true, user, earnings }, { status: 200 })
+    } catch (e) {
+      console.warn('Failed to fetch user earnings summary', e)
+      return NextResponse.json({ found: true, user }, { status: 200 })
+    }
   } catch (error) {
     console.error("API GET user error:", error)
     return NextResponse.json({ error: "Failed to fetch user" }, { status: 500 })
