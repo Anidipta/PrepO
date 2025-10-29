@@ -15,6 +15,14 @@ export async function connectToDatabase() {
   }
 
   try {
+    // In production deployments we require a MONGODB_URI to be configured.
+    // Falling back to localhost in production will almost certainly fail.
+    if (process.env.NODE_ENV === 'production' && !process.env.MONGODB_URI) {
+      const msg = 'MONGODB_URI is not set in production environment. Set the environment variable to your MongoDB connection string.'
+      console.error(msg)
+      throw new Error(msg)
+    }
+
     const client = new MongoClient(MONGODB_URI)
     await client.connect()
     const db = client.db(DB_NAME)

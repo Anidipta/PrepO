@@ -12,7 +12,7 @@ from typing import Optional
 app = FastAPI()
 
 # Configuration
-GROQ_API_KEY = os.getenv("GROQ_API_KEY") or os.getenv("AI_API_KEY") or "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"
+GROQ_API_KEY = os.getenv('GROQ_API_KEY') or os.getenv('AI_API_KEY')
 GROQ_MODEL = os.getenv("GROQ_MODEL") or "llama-3.3-70b-versatile"
 
 if not GROQ_API_KEY:

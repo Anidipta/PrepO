@@ -36,7 +36,7 @@ export default function RootLayout({
             <WalletProvider>{children}</WalletProvider>
           </RainbowKitProvider>
         </ThemeProvider>
-
+        
         {/* Global custom cursor */}
         <TargetCursor spinDuration={2} hideDefaultCursor={true} />
 

@@ -324,7 +324,7 @@ const TargetCursor: React.FC<TargetCursorProps> = ({
     <div
       ref={cursorRef}
       className="fixed top-0 left-0 w-0 h-0 pointer-events-none z-[9999] mix-blend-difference transform -translate-x-1/2 -translate-y-1/2"
-      style={{ willChange: "transform" }}
+      style={{ willChange: "transform", zIndex: 99999 }}
     >
       <div
         ref={dotRef}
