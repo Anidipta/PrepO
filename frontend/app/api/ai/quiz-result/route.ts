@@ -5,18 +5,20 @@ import { saveEarningToMongo } from "@/lib/mongodb"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { userAddress, correct, incorrect, amount } = body
-    if (!userAddress) return NextResponse.json({ error: "Missing userAddress" }, { status: 400 })
+  const { userAddress, correct, incorrect, amount, status, txHash } = body
+  if (!userAddress) return NextResponse.json({ error: "Missing userAddress" }, { status: 400 })
 
     const { db } = await connectToDatabase()
     const coll = db.collection("quiz_payout_requests")
 
-    const doc = {
-      userAddress,
+    const normalizedAddress = String(userAddress || "").toLowerCase()
+    const doc: any = {
+      userAddress: normalizedAddress,
       correct: Number(correct || 0),
       incorrect: Number(incorrect || 0),
       amount: Number(amount || 0),
-      status: "pending",
+      status: status || "pending",
+      txHash: txHash || null,
       createdAt: new Date(),
     }
 

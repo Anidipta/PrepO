@@ -14,7 +14,7 @@ interface QuizInterfaceProps {
   onComplete?: (result: { correct: number; incorrect: number; total: number }) => void
 }
 
-export default function QuizInterface({ onClose }: QuizInterfaceProps) {
+export default function QuizInterface({ onClose, onComplete }: QuizInterfaceProps) {
   const [stage, setStage] = useState<"upload" | "preview" | "confirmation">("upload")
   const [fileName, setFileName] = useState("")
   const [loading, setLoading] = useState(false)
@@ -208,6 +208,16 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
           } catch (e) {
             console.warn("Failed to log tx", e)
           }
+          // Record the negative earning on the server so user's earnings summary reflects the penalty
+          try {
+            await fetch(`/api/ai/quiz-result`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userAddress: savedAddress, correct, incorrect, amount: -amount, status: 'completed', txHash: tx.hash }),
+            })
+          } catch (e) {
+            console.warn('Failed to record negative quiz earning on server:', e)
+          }
         } catch (e) {
           console.error("On-chain payment failed:", e)
           alert("Payment failed: " + (e as any)?.message)
@@ -247,8 +257,8 @@ export default function QuizInterface({ onClose }: QuizInterfaceProps) {
 
       setResult({ correct, incorrect, total })
       setStage("confirmation")
-      if (typeof props?.onComplete === "function") {
-        try { props.onComplete({ correct, incorrect, total }) } catch (e) {}
+      if (typeof onComplete === "function") {
+        try { onComplete({ correct, incorrect, total }) } catch (e) { console.warn('onComplete handler failed', e) }
       }
     } catch (error) {
       console.error("[v0] Error publishing quiz:", error)
